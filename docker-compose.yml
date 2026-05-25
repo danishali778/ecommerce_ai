@@ -1,0 +1,46 @@
+services:
+  api:
+    build:
+      context: .
+      dockerfile: infra/docker/api.Dockerfile
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+    env_file:
+      - infra/env/.env
+    volumes:
+      - ./apps/api:/app
+      - ./infra/env:/infra/env
+    ports:
+      - "8000:8000"
+    depends_on:
+      - redis
+
+  worker:
+    build:
+      context: .
+      dockerfile: infra/docker/api.Dockerfile
+    command: celery -A app.core.celery_app.celery_app worker --loglevel=INFO
+    env_file:
+      - infra/env/.env
+    volumes:
+      - ./apps/api:/app
+      - ./infra/env:/infra/env
+    depends_on:
+      - redis
+
+  beat:
+    build:
+      context: .
+      dockerfile: infra/docker/api.Dockerfile
+    command: celery -A app.core.celery_app.celery_app beat --loglevel=INFO
+    env_file:
+      - infra/env/.env
+    volumes:
+      - ./apps/api:/app
+      - ./infra/env:/infra/env
+    depends_on:
+      - redis
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
