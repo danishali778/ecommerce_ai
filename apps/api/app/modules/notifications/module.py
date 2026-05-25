@@ -6,6 +6,8 @@ from app.core.errors import AppError
 from app.core.permissions import Permission
 from app.repositories.notification_repository import NotificationRepository
 
+from .serializers import serialize_notification
+
 
 class NotificationModule:
     def __init__(self, db) -> None:
@@ -29,7 +31,7 @@ class NotificationModule:
             notification_type=notification_type,
             store_id=store_id,
         )
-        return [self._serialize(notification) for notification in notifications]
+        return [serialize_notification(notification) for notification in notifications]
 
     def mark_as_read(self, user_context: dict, notification_id: UUID) -> dict:
         require_permission(user_context, Permission.NOTIFICATIONS_UPDATE)
@@ -40,7 +42,7 @@ class NotificationModule:
         if notification.status != "read":
             notification = self.repository.update(notification, status="read", read_at=datetime.now(timezone.utc))
         self.db.commit()
-        return self._serialize(notification)
+        return serialize_notification(notification)
 
     @staticmethod
     def _require_org(user_context: dict) -> dict:
@@ -48,17 +50,3 @@ class NotificationModule:
         if organization is None:
             raise AppError(code="forbidden", message="Organization context is required", status_code=403)
         return organization
-
-    @staticmethod
-    def _serialize(notification) -> dict:
-        return {
-            "id": str(notification.id),
-            "type": notification.type,
-            "channel": notification.channel,
-            "title": notification.title,
-            "body": notification.body,
-            "status": notification.status,
-            "read_at": notification.read_at.isoformat() if notification.read_at else None,
-            "created_at": notification.created_at.isoformat(),
-            "store_id": str(notification.store_id) if notification.store_id else None,
-        }

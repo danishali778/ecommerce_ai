@@ -4,6 +4,8 @@ from app.core.errors import AppError
 from app.repositories.organization_repository import OrganizationRepository
 from app.repositories.user_repository import UserRepository
 
+from .serializers import serialize_organization
+
 
 class OrganizationModule:
     def __init__(self, db) -> None:
@@ -27,7 +29,7 @@ class OrganizationModule:
         owner_roles = self.user_repository.get_roles_by_names(["Owner"])
         self.user_repository.replace_user_roles(app_user.id, [role.id for role in owner_roles], app_user.id)
         self.db.commit()
-        return self._serialize(organization)
+        return serialize_organization(organization)
 
     def get_current_organization(self, user_context: dict) -> dict:
         organization = user_context.get("organization")
@@ -36,15 +38,4 @@ class OrganizationModule:
         organization_record = self.organization_repository.get_by_id(UUID(organization["id"]))
         if organization_record is None:
             raise AppError(code="not_found", message="Organization not found", status_code=404)
-        return self._serialize(organization_record)
-
-    @staticmethod
-    def _serialize(organization) -> dict:
-        return {
-            "id": str(organization.id),
-            "name": organization.name,
-            "slug": organization.slug,
-            "status": organization.status,
-            "created_at": organization.created_at.isoformat(),
-            "updated_at": organization.updated_at.isoformat(),
-        }
+        return serialize_organization(organization_record)
