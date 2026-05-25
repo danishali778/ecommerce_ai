@@ -1,0 +1,43 @@
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+*.egg-info/
+.venv/
+venv/
+
+# Node
+node_modules/
+dist/
+.vite/
+
+# Environment
+.env
+.env.local
+**/.env
+
+# Project docs / planning (kept local for now)
+docs/
+Releases/
+CHANGELOG.md
+CommerceOps_AI_PRD.md
+CommerceOps_AI_Release_Plan.md
+
+# OS / editor
+.DS_Store
+.idea/
+.vscode/
+
+# Local tooling
+.codex/
+.agents/
+.antigravitycli/
+
+# Build / runtime
+*.log
+.cache/
+celerybeat-schedule
