@@ -76,6 +76,20 @@ class ShopifyClient:
             raise AppError(code="upstream_error", message="Shopify GraphQL response contains errors", status_code=502, details=body["errors"])
         return body["data"]
 
+    @staticmethod
+    def _is_customer_access_denied(exc: AppError) -> bool:
+        details = exc.details or {}
+        if not isinstance(details, list):
+            return False
+        for item in details:
+            if not isinstance(item, dict):
+                continue
+            message = str(item.get("message", "")).lower()
+            code = ((item.get("extensions") or {}).get("code") or "").upper()
+            if code == "ACCESS_DENIED" and "customer object" in message:
+                return True
+        return False
+
     def fetch_products(self, shop_domain: str, access_token: str) -> list[dict]:
         query = """
         query Products {
@@ -135,7 +149,7 @@ class ShopifyClient:
         return results
 
     def fetch_orders(self, shop_domain: str, access_token: str) -> list[dict]:
-        query = """
+        query_with_customer = """
         query Orders {
           orders(first: 25, sortKey: CREATED_AT, reverse: true) {
             nodes {
@@ -145,7 +159,15 @@ class ShopifyClient:
               createdAt
               currentSubtotalPriceSet { shopMoney { amount currencyCode } }
               currentTotalPriceSet { shopMoney { amount currencyCode } }
-              customer { id email firstName lastName phone numberOfOrders amountSpent { amount } }
+              customer {
+                id
+                firstName
+                lastName
+                defaultEmailAddress { emailAddress }
+                defaultPhoneNumber { phoneNumber }
+                numberOfOrders
+                amountSpent { amount }
+              }
               lineItems(first: 25) {
                 nodes {
                   id
@@ -159,7 +181,35 @@ class ShopifyClient:
           }
         }
         """
-        data = self.graphql(shop_domain, access_token, query)
+        query_without_customer = """
+        query Orders {
+          orders(first: 25, sortKey: CREATED_AT, reverse: true) {
+            nodes {
+              id
+              displayFulfillmentStatus
+              displayFinancialStatus
+              createdAt
+              currentSubtotalPriceSet { shopMoney { amount currencyCode } }
+              currentTotalPriceSet { shopMoney { amount currencyCode } }
+              lineItems(first: 25) {
+                nodes {
+                  id
+                  sku
+                  name
+                  quantity
+                  originalUnitPriceSet { shopMoney { amount } }
+                }
+              }
+            }
+          }
+        }
+        """
+        try:
+            data = self.graphql(shop_domain, access_token, query_with_customer)
+        except AppError as exc:
+            if not self._is_customer_access_denied(exc):
+                raise
+            data = self.graphql(shop_domain, access_token, query_without_customer)
         results = []
         for node in data["orders"]["nodes"]:
             customer = node.get("customer")
@@ -187,10 +237,10 @@ class ShopifyClient:
                     "currency": ((node.get("currentTotalPriceSet") or {}).get("shopMoney") or {}).get("currencyCode"),
                     "customer": {
                         "external_customer_id": customer["id"],
-                        "email": customer.get("email"),
+                        "email": (customer.get("defaultEmailAddress") or {}).get("emailAddress") or customer.get("email"),
                         "first_name": customer.get("firstName"),
                         "last_name": customer.get("lastName"),
-                        "phone": customer.get("phone"),
+                        "phone": (customer.get("defaultPhoneNumber") or {}).get("phoneNumber") or customer.get("phone"),
                         "total_orders": customer.get("numberOfOrders", 0),
                         "total_spend": ((customer.get("amountSpent") or {}).get("amount")) or 0,
                     } if customer else None,
@@ -205,24 +255,29 @@ class ShopifyClient:
           customers(first: 25, sortKey: CREATED_AT, reverse: true) {
             nodes {
               id
-              email
               firstName
               lastName
-              phone
+              defaultEmailAddress { emailAddress }
+              defaultPhoneNumber { phoneNumber }
               numberOfOrders
               amountSpent { amount }
             }
           }
         }
         """
-        data = self.graphql(shop_domain, access_token, query)
+        try:
+            data = self.graphql(shop_domain, access_token, query)
+        except AppError as exc:
+            if not self._is_customer_access_denied(exc):
+                raise
+            return []
         return [
             {
                 "external_customer_id": node["id"],
-                "email": node.get("email"),
+                "email": (node.get("defaultEmailAddress") or {}).get("emailAddress") or node.get("email"),
                 "first_name": node.get("firstName"),
                 "last_name": node.get("lastName"),
-                "phone": node.get("phone"),
+                "phone": (node.get("defaultPhoneNumber") or {}).get("phoneNumber") or node.get("phone"),
                 "total_orders": node.get("numberOfOrders", 0),
                 "total_spend": ((node.get("amountSpent") or {}).get("amount")) or 0,
             }
@@ -231,15 +286,15 @@ class ShopifyClient:
 
     def publish_product_content(self, shop_domain: str, access_token: str, product_external_id: str, payload: dict) -> dict:
         query = """
-        mutation UpdateProduct($input: ProductInput!) {
-          productUpdate(product: $input) {
+        mutation UpdateProduct($product: ProductUpdateInput!) {
+          productUpdate(product: $product) {
             product { id title handle }
             userErrors { field message }
           }
         }
         """
         variables = {
-            "input": {
+            "product": {
                 "id": product_external_id,
                 "title": payload.get("generated_title"),
                 "descriptionHtml": payload.get("generated_description"),
