@@ -20,6 +20,9 @@ class AppError(Exception):
         self.status_code = status_code
         self.details = redact_value(details or {})
 
+    def __reduce__(self):
+        return (self.__class__, (self.code, self.message, self.status_code, self.details))
+
 
 class TransientUpstreamError(Exception):
     def __init__(self, message: str) -> None:
