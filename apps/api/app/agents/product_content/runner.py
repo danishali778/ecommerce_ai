@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 from uuid import UUID
+import json
 
 from langgraph.graph import END, START, StateGraph
 
@@ -152,6 +153,41 @@ class ProductContentAgentRunner:
         tone: str,
         constraints: dict,
     ) -> ProductContentAgentOutput:
+        def normalize_output(raw: dict) -> dict:
+            normalized = dict(raw or {})
+            reasoning = normalized.get("reasoning", "")
+            if isinstance(reasoning, dict):
+                normalized["reasoning"] = json.dumps(reasoning, ensure_ascii=True)
+            elif isinstance(reasoning, list):
+                normalized["reasoning"] = ", ".join(str(item) for item in reasoning)
+            elif reasoning is None:
+                normalized["reasoning"] = ""
+            else:
+                normalized["reasoning"] = str(reasoning)
+
+            tags = normalized.get("generated_tags", [])
+            if tags is None:
+                normalized["generated_tags"] = []
+            elif isinstance(tags, str):
+                normalized["generated_tags"] = [tags]
+            elif isinstance(tags, list):
+                normalized["generated_tags"] = [str(item) for item in tags]
+            else:
+                normalized["generated_tags"] = [str(tags)]
+
+            for field in (
+                "generated_title",
+                "generated_description",
+                "generated_seo_title",
+                "generated_seo_description",
+            ):
+                value = normalized.get(field)
+                if value is None:
+                    continue
+                normalized[field] = str(value)
+
+            return normalized
+
         def generate_node(state: dict) -> dict:
             prompt = build_product_content_prompt(
                 state["product"],
@@ -159,7 +195,8 @@ class ProductContentAgentRunner:
                 state["tone"],
                 state["constraints"],
             )
-            output = ProductContentAgentOutput.model_validate(self.llm_provider.generate_structured_json(prompt))
+            raw_output = self.llm_provider.generate_structured_json(prompt)
+            output = ProductContentAgentOutput.model_validate(normalize_output(raw_output))
             return {"result": output}
 
         graph = StateGraph(dict)

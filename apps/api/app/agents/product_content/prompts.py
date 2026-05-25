@@ -23,4 +23,8 @@ Return only JSON with:
 - generated_seo_title
 - generated_seo_description
 - reasoning
+
+Rules:
+- `generated_tags` must be an array of strings.
+- `reasoning` must be a short plain string, not an object or nested JSON.
 """
