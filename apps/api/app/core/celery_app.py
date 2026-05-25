@@ -9,6 +9,11 @@ celery_app = Celery(
     "commerceops",
     broker=settings.resolved_celery_broker_url,
     backend=settings.resolved_celery_result_backend,
+    include=[
+        "app.tasks.sync",
+        "app.tasks.catalog",
+        "app.tasks.approvals",
+    ],
 )
 celery_app.conf.update(
     task_serializer="json",
@@ -25,4 +30,3 @@ celery_app.conf.update(
         }
     },
 )
-celery_app.autodiscover_tasks(["app.tasks"])
