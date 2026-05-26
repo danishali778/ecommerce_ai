@@ -21,7 +21,9 @@ dist/
 **/.env
 
 # Project docs / planning (kept local for now)
-docs/
+docs/*
+!docs/public/
+!docs/public/**
 Releases/
 CHANGELOG.md
 CommerceOps_AI_PRD.md
