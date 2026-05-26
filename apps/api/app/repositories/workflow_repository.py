@@ -10,6 +10,37 @@ class WorkflowRepository(Repository):
     def get_workflow_by_key(self, key: str) -> Workflow | None:
         return self.db.scalar(select(Workflow).where(Workflow.key == key))
 
+    def ensure_system_workflow(
+        self,
+        *,
+        key: str,
+        name: str,
+        phase_scope: str,
+        trigger_type: str,
+        action_type: str,
+        approval_required: bool = False,
+        condition_json: dict | None = None,
+        is_active: bool = True,
+    ) -> Workflow:
+        workflow = self.get_workflow_by_key(key)
+        if workflow is not None:
+            return workflow
+        workflow = Workflow(
+            organization_id=None,
+            name=name,
+            key=key,
+            phase_scope=phase_scope,
+            trigger_type=trigger_type,
+            condition_json=condition_json or {},
+            action_type=action_type,
+            approval_required=approval_required,
+            is_system_defined=True,
+            is_active=is_active,
+        )
+        self.db.add(workflow)
+        self.db.flush()
+        return workflow
+
     def create_workflow_run(self, **values) -> WorkflowRun:
         workflow_run = WorkflowRun(**values)
         self.db.add(workflow_run)
