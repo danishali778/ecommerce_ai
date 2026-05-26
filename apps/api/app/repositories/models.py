@@ -439,3 +439,165 @@ class Notification(Base):
     status: Mapped[str] = mapped_column(String(50), default="unread")
     read_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class SupportConversation(Base, TimestampMixin):
+    __tablename__ = "support_conversations"
+    __table_args__ = (
+        Index("support_conversations_store_updated_idx", "store_id", "updated_at"),
+        {"schema": SCHEMA},
+    )
+
+    id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
+    organization_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), ForeignKey(f"{SCHEMA}.organizations.id"))
+    store_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), ForeignKey(f"{SCHEMA}.stores.id"))
+    customer_id: Mapped[UUID | None] = mapped_column(PGUUID(as_uuid=True), ForeignKey(f"{SCHEMA}.customers.id"), nullable=True)
+    order_id: Mapped[UUID | None] = mapped_column(PGUUID(as_uuid=True), ForeignKey(f"{SCHEMA}.orders.id"), nullable=True)
+    external_ticket_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    channel: Mapped[str] = mapped_column(String(50), default="internal_console")
+    status: Mapped[str] = mapped_column(String(50), default="open")
+    assigned_user_id: Mapped[UUID | None] = mapped_column(PGUUID(as_uuid=True), ForeignKey(f"{SCHEMA}.users.id"), nullable=True)
+
+
+class SupportMessage(Base, TimestampMixin):
+    __tablename__ = "support_messages"
+    __table_args__ = (
+        Index("support_messages_conversation_created_idx", "conversation_id", "created_at"),
+        {"schema": SCHEMA},
+    )
+
+    id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
+    organization_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), ForeignKey(f"{SCHEMA}.organizations.id"))
+    store_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), ForeignKey(f"{SCHEMA}.stores.id"))
+    conversation_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), ForeignKey(f"{SCHEMA}.support_conversations.id"))
+    direction: Mapped[str] = mapped_column(String(50))
+    body: Mapped[str] = mapped_column(Text)
+    generated_by_ai: Mapped[bool] = mapped_column(Boolean, default=False)
+    confidence_score: Mapped[Decimal | None] = mapped_column(Numeric(5, 4), nullable=True)
+    needs_human_review: Mapped[bool] = mapped_column(Boolean, default=False)
+    review_reason_code: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    status: Mapped[str] = mapped_column(String(64), default="logged")
+    cited_policy_chunks_json: Mapped[list[dict[str, Any]]] = mapped_column(JSON, default=list)
+    cited_order_facts_summary: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_by_user_id: Mapped[UUID | None] = mapped_column(PGUUID(as_uuid=True), ForeignKey(f"{SCHEMA}.users.id"), nullable=True)
+
+
+class PolicyDocument(Base, TimestampMixin):
+    __tablename__ = "policy_documents"
+    __table_args__ = (
+        UniqueConstraint("store_id", "document_type", name="policy_documents_store_document_type_uidx"),
+        {"schema": SCHEMA},
+    )
+
+    id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
+    organization_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), ForeignKey(f"{SCHEMA}.organizations.id"))
+    store_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), ForeignKey(f"{SCHEMA}.stores.id"))
+    document_type: Mapped[str] = mapped_column(String(50))
+    source_type: Mapped[str] = mapped_column(String(50), default="manual")
+    title: Mapped[str] = mapped_column(String(255))
+    content: Mapped[str] = mapped_column(Text)
+    version: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    embedding_status: Mapped[str] = mapped_column(String(50), default="pending")
+
+
+class PolicyDocumentChunk(Base):
+    __tablename__ = "policy_document_chunks"
+    __table_args__ = (
+        UniqueConstraint("policy_document_id", "chunk_index", name="policy_document_chunks_doc_index_uidx"),
+        Index("policy_document_chunks_store_type_idx", "store_id", "document_type"),
+        {"schema": SCHEMA},
+    )
+
+    id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
+    organization_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), ForeignKey(f"{SCHEMA}.organizations.id"))
+    store_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), ForeignKey(f"{SCHEMA}.stores.id"))
+    policy_document_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), ForeignKey(f"{SCHEMA}.policy_documents.id"))
+    document_type: Mapped[str] = mapped_column(String(50))
+    chunk_index: Mapped[int] = mapped_column(Integer)
+    content: Mapped[str] = mapped_column(Text)
+    embedding_json: Mapped[list[float] | None] = mapped_column(JSON, nullable=True)
+    token_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class InventoryAlert(Base):
+    __tablename__ = "inventory_alerts"
+    __table_args__ = (
+        UniqueConstraint("store_id", "variant_id", "status", name="inventory_alerts_variant_status_uidx"),
+        Index("inventory_alerts_store_status_created_idx", "store_id", "status", "created_at"),
+        {"schema": SCHEMA},
+    )
+
+    id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
+    organization_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), ForeignKey(f"{SCHEMA}.organizations.id"))
+    store_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), ForeignKey(f"{SCHEMA}.stores.id"))
+    product_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), ForeignKey(f"{SCHEMA}.products.id"))
+    variant_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), ForeignKey(f"{SCHEMA}.product_variants.id"))
+    threshold_value: Mapped[int] = mapped_column(Integer)
+    current_quantity: Mapped[int] = mapped_column(Integer)
+    status: Mapped[str] = mapped_column(String(50), default="open")
+    resolved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
+
+
+class ReorderSuggestion(Base, TimestampMixin):
+    __tablename__ = "reorder_suggestions"
+    __table_args__ = (
+        UniqueConstraint("inventory_alert_id", "status", name="reorder_suggestions_alert_status_uidx"),
+        Index("reorder_suggestions_store_status_created_idx", "store_id", "status", "created_at"),
+        {"schema": SCHEMA},
+    )
+
+    id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
+    organization_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), ForeignKey(f"{SCHEMA}.organizations.id"))
+    store_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), ForeignKey(f"{SCHEMA}.stores.id"))
+    inventory_alert_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), ForeignKey(f"{SCHEMA}.inventory_alerts.id"))
+    product_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), ForeignKey(f"{SCHEMA}.products.id"))
+    variant_id: Mapped[UUID | None] = mapped_column(PGUUID(as_uuid=True), ForeignKey(f"{SCHEMA}.product_variants.id"), nullable=True)
+    recommended_quantity: Mapped[int] = mapped_column(Integer)
+    current_quantity: Mapped[int] = mapped_column(Integer)
+    threshold_value: Mapped[int] = mapped_column(Integer)
+    rationale_json: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    status: Mapped[str] = mapped_column(String(50), default="open")
+
+
+class SupplierReorderDraft(Base, TimestampMixin):
+    __tablename__ = "supplier_reorder_drafts"
+    __table_args__ = (
+        UniqueConstraint("reorder_suggestion_id", name="supplier_reorder_drafts_suggestion_uidx"),
+        {"schema": SCHEMA},
+    )
+
+    id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
+    organization_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), ForeignKey(f"{SCHEMA}.organizations.id"))
+    store_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), ForeignKey(f"{SCHEMA}.stores.id"))
+    reorder_suggestion_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), ForeignKey(f"{SCHEMA}.reorder_suggestions.id"))
+    vendor_name: Mapped[str] = mapped_column(String(255))
+    recipient_email: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    subject: Mapped[str] = mapped_column(String(255))
+    body: Mapped[str] = mapped_column(Text)
+    status: Mapped[str] = mapped_column(String(50), default="draft")
+    created_by_user_id: Mapped[UUID | None] = mapped_column(PGUUID(as_uuid=True), ForeignKey(f"{SCHEMA}.users.id"), nullable=True)
+
+
+class RiskReview(Base, TimestampMixin):
+    __tablename__ = "risk_reviews"
+    __table_args__ = (
+        UniqueConstraint("order_id", "risk_status", name="risk_reviews_order_status_uidx"),
+        Index("risk_reviews_store_status_created_idx", "store_id", "risk_status", "created_at"),
+        {"schema": SCHEMA},
+    )
+
+    id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
+    organization_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), ForeignKey(f"{SCHEMA}.organizations.id"))
+    store_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), ForeignKey(f"{SCHEMA}.stores.id"))
+    order_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), ForeignKey(f"{SCHEMA}.orders.id"))
+    risk_score: Mapped[int] = mapped_column(Integer)
+    risk_status: Mapped[str] = mapped_column(String(50), default="pending_review")
+    reason_codes_json: Mapped[list[str]] = mapped_column(JSON, default=list)
+    decision: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    decision_notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    reviewed_by_user_id: Mapped[UUID | None] = mapped_column(PGUUID(as_uuid=True), ForeignKey(f"{SCHEMA}.users.id"), nullable=True)
+    reviewed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
