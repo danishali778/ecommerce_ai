@@ -5,6 +5,8 @@ from uuid import UUID
 from app.core.errors import AppError
 from app.core.secret_store import get_secret_store
 from app.integrations.shopify import ShopifyClient
+from app.modules.fraud import FraudModule
+from app.modules.inventory import InventoryModule
 from app.repositories.idempotency_repository import IdempotencyRepository
 from app.repositories.store_repository import StoreRepository
 from app.repositories.sync_repository import SyncRepository
@@ -26,6 +28,8 @@ class SyncModule:
         self.user_repository = UserRepository(db)
         self.shopify_client = ShopifyClient()
         self.secret_store = get_secret_store()
+        self.fraud_module = FraudModule(db)
+        self.inventory_module = InventoryModule(db)
 
     def create_sync_run(self, user_context: dict, store_id: UUID, mode: str, idempotency_key: str | None) -> dict:
         return create_sync_run(self, user_context, store_id, mode, idempotency_key)

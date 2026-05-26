@@ -232,6 +232,24 @@ class SyncRepository(Repository):
             )
         )
 
+    def get_variant(self, organization_id: UUID, store_id: UUID, variant_id: UUID) -> ProductVariant | None:
+        return self.db.scalar(
+            select(ProductVariant).where(
+                ProductVariant.organization_id == organization_id,
+                ProductVariant.store_id == store_id,
+                ProductVariant.id == variant_id,
+            )
+        )
+
+    def list_variants_for_store(self, organization_id: UUID, store_id: UUID) -> list[ProductVariant]:
+        return list(
+            self.db.scalars(
+                select(ProductVariant)
+                .where(ProductVariant.organization_id == organization_id, ProductVariant.store_id == store_id)
+                .order_by(ProductVariant.updated_at.desc())
+            )
+        )
+
     def list_orders(self, organization_id: UUID, store_id: UUID) -> list[Order]:
         return list(
             self.db.scalars(
@@ -261,5 +279,23 @@ class SyncRepository(Repository):
                 Customer.organization_id == organization_id,
                 Customer.store_id == store_id,
                 Customer.id == customer_id,
+            )
+        )
+
+    def list_orders_for_sync_run(self, sync_run_id: UUID) -> list[Order]:
+        return list(
+            self.db.scalars(
+                select(Order)
+                .where(Order.last_sync_run_id == sync_run_id)
+                .order_by(Order.updated_at.desc())
+            )
+        )
+
+    def list_variants_for_sync_run(self, sync_run_id: UUID) -> list[ProductVariant]:
+        return list(
+            self.db.scalars(
+                select(ProductVariant)
+                .where(ProductVariant.last_sync_run_id == sync_run_id)
+                .order_by(ProductVariant.updated_at.desc())
             )
         )

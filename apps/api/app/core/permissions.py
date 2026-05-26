@@ -21,6 +21,16 @@ class Permission:
     LOGS_READ = "logs.read"
     NOTIFICATIONS_READ = "notifications.read"
     NOTIFICATIONS_UPDATE = "notifications.update"
+    SUPPORT_READ = "support.read"
+    SUPPORT_WRITE = "support.write"
+    SUPPORT_GENERATE = "support.generate"
+    POLICIES_READ = "policies.read"
+    POLICIES_MANAGE = "policies.manage"
+    INVENTORY_READ = "inventory.read"
+    INVENTORY_MANAGE = "inventory.manage"
+    FRAUD_READ = "fraud.read"
+    FRAUD_REVIEW = "fraud.review"
+    ANALYTICS_READ = "analytics.read"
 
 
 ALL_PERMISSIONS = [
@@ -41,6 +51,16 @@ ALL_PERMISSIONS = [
     Permission.LOGS_READ,
     Permission.NOTIFICATIONS_READ,
     Permission.NOTIFICATIONS_UPDATE,
+    Permission.SUPPORT_READ,
+    Permission.SUPPORT_WRITE,
+    Permission.SUPPORT_GENERATE,
+    Permission.POLICIES_READ,
+    Permission.POLICIES_MANAGE,
+    Permission.INVENTORY_READ,
+    Permission.INVENTORY_MANAGE,
+    Permission.FRAUD_READ,
+    Permission.FRAUD_REVIEW,
+    Permission.ANALYTICS_READ,
 ]
 
 
@@ -61,6 +81,16 @@ ROLE_PERMISSION_MAP: dict[str, list[str]] = {
         Permission.LOGS_READ,
         Permission.NOTIFICATIONS_READ,
         Permission.NOTIFICATIONS_UPDATE,
+        Permission.SUPPORT_READ,
+        Permission.SUPPORT_WRITE,
+        Permission.SUPPORT_GENERATE,
+        Permission.POLICIES_READ,
+        Permission.POLICIES_MANAGE,
+        Permission.INVENTORY_READ,
+        Permission.INVENTORY_MANAGE,
+        Permission.FRAUD_READ,
+        Permission.FRAUD_REVIEW,
+        Permission.ANALYTICS_READ,
     ],
     "Marketing User": [
         Permission.CATALOG_READ,
@@ -71,6 +101,8 @@ ROLE_PERMISSION_MAP: dict[str, list[str]] = {
         Permission.LOGS_READ,
         Permission.NOTIFICATIONS_READ,
         Permission.NOTIFICATIONS_UPDATE,
+        Permission.POLICIES_READ,
+        Permission.ANALYTICS_READ,
     ],
     "Support Agent": [
         Permission.CATALOG_READ,
@@ -78,12 +110,22 @@ ROLE_PERMISSION_MAP: dict[str, list[str]] = {
         Permission.LOGS_READ,
         Permission.NOTIFICATIONS_READ,
         Permission.NOTIFICATIONS_UPDATE,
+        Permission.SUPPORT_READ,
+        Permission.SUPPORT_WRITE,
+        Permission.SUPPORT_GENERATE,
+        Permission.POLICIES_READ,
+        Permission.FRAUD_READ,
+        Permission.ANALYTICS_READ,
     ],
     "Viewer": [
         Permission.CATALOG_READ,
         Permission.SYNC_READ,
         Permission.LOGS_READ,
         Permission.NOTIFICATIONS_READ,
+        Permission.POLICIES_READ,
+        Permission.INVENTORY_READ,
+        Permission.FRAUD_READ,
+        Permission.ANALYTICS_READ,
     ],
 }
 

@@ -13,6 +13,8 @@ celery_app = Celery(
         "app.tasks.sync",
         "app.tasks.catalog",
         "app.tasks.approvals",
+        "app.tasks.policies",
+        "app.tasks.support",
     ],
 )
 celery_app.conf.update(

@@ -51,6 +51,14 @@ class Settings(BaseSettings):
     llm_api_key: str | None = Field(default=None, alias="LLM_API_KEY")
     llm_model: str = Field(default="llama-3.3-70b-versatile", alias="LLM_MODEL")
     llm_base_url: str = Field(default="https://api.groq.com/openai/v1", alias="LLM_BASE_URL")
+    embedding_api_key: str | None = Field(default=None, alias="EMBEDDING_API_KEY")
+    embedding_base_url: str | None = Field(default=None, alias="EMBEDDING_BASE_URL")
+    embedding_model: str = Field(default="text-embedding-3-small", alias="EMBEDDING_MODEL")
+    rag_chunk_size: int = Field(default=800, alias="RAG_CHUNK_SIZE")
+    rag_chunk_overlap: int = Field(default=120, alias="RAG_CHUNK_OVERLAP")
+    rag_retrieval_top_k: int = Field(default=4, alias="RAG_RETRIEVAL_TOP_K")
+    rag_max_prompt_chunks: int = Field(default=4, alias="RAG_MAX_PROMPT_CHUNKS")
+    support_policy_confidence_threshold: float = Field(default=0.75, alias="SUPPORT_POLICY_CONFIDENCE_THRESHOLD")
 
     log_level: str = Field(default="INFO", alias="LOG_LEVEL")
 

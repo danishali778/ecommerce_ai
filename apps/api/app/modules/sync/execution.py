@@ -84,17 +84,39 @@ def execute_sync_run(module, sync_run_id: str) -> None:
             archived_at=datetime.now(timezone.utc),
         )
 
+        post_processing: dict[str, dict] = {}
+        for key, handler in {
+            "fraud": module.fraud_module.process_sync_run,
+            "inventory": module.inventory_module.process_sync_run,
+        }.items():
+            try:
+                post_processing[key] = handler(sync_run)
+            except Exception as post_processing_exc:  # noqa: BLE001
+                redacted_message = redact_text(str(post_processing_exc))
+                post_processing[key] = {"error": redacted_message}
+                workflow_repository.create_audit_event(
+                    organization_id=sync_run.organization_id,
+                    store_id=sync_run.store_id,
+                    user_id=sync_run.triggered_by_user_id,
+                    entity_type="sync_run",
+                    entity_id=sync_run.id,
+                    action_type=f"{key}_post_processing_failed",
+                    source_type="celery",
+                    outcome="failed",
+                    metadata_json={"error": redacted_message},
+                )
+
         sync_run.status = "succeeded"
         sync_run.records_imported = sum(imported.values())
         sync_run.records_failed = 0
-        sync_run.entity_counts_json = imported
+        sync_run.entity_counts_json = imported | post_processing
         sync_run.completed_at = datetime.now(timezone.utc)
         store.last_successful_sync_at = sync_run.completed_at
         integration.last_successful_sync_at = sync_run.completed_at
         workflow_repository.update_workflow_run(
             workflow_run,
             status="succeeded",
-            output_payload={"entity_counts": imported},
+            output_payload={"entity_counts": imported, "post_processing": post_processing},
             completed_at=datetime.now(timezone.utc),
         )
         workflow_repository.create_audit_event(
@@ -106,7 +128,7 @@ def execute_sync_run(module, sync_run_id: str) -> None:
             action_type="sync_completed",
             source_type="celery",
             outcome="succeeded",
-            metadata_json={"entity_counts": imported},
+            metadata_json={"entity_counts": imported, "post_processing": post_processing},
         )
         module.db.commit()
     except Exception as exc:  # noqa: BLE001
