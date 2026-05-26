@@ -36,6 +36,14 @@ CommerceOps_AI_Release_Plan.md
 .codex/
 .agents/
 .antigravitycli/
+_worktrees/
+
+# Local scaffolding / non-repo work
+apps/web/
+packages/
+supabase/
+tests/
+apps/api/*.secret
 
 # Build / runtime
 *.log
