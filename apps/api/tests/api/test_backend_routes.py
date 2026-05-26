@@ -501,3 +501,252 @@ def test_dashboard_approval_notification_and_integration_routes(monkeypatch):
     assert client.get("/api/v1/integrations/shopify/callback?shop=store.myshopify.com&code=code-1&state=state-1&hmac=hmac-1").status_code == 200
     client.app.dependency_overrides.clear()
     get_settings.cache_clear()
+
+
+def test_phase1_support_policy_fraud_inventory_and_analytics_routes(monkeypatch):
+    client = _build_client(monkeypatch)
+    from app.api.deps.auth import get_current_user_context
+    from app.api.routes.analytics import get_analytics_service
+    from app.api.routes.fraud import get_fraud_service
+    from app.api.routes.inventory import get_inventory_service
+    from app.api.routes.policies import get_policy_service
+    from app.api.routes.support import get_support_service
+
+    store_id = str(uuid4())
+    conversation_id = str(uuid4())
+    message_id = str(uuid4())
+    policy_id = str(uuid4())
+    review_id = str(uuid4())
+    suggestion_id = str(uuid4())
+    alert_id = str(uuid4())
+    workflow_run_id = str(uuid4())
+    agent_run_id = str(uuid4())
+
+    class FakePolicyService:
+        def create_document(self, user_context, requested_store_id, payload):
+            assert str(requested_store_id) == store_id
+            return {
+                "id": policy_id,
+                "store_id": store_id,
+                "document_type": payload.document_type,
+                "source_type": payload.source_type,
+                "title": payload.title,
+                "content": payload.content,
+                "version": payload.version,
+                "is_active": True,
+                "embedding_status": "pending",
+                "created_at": "2026-05-26T00:00:00+00:00",
+                "updated_at": "2026-05-26T00:00:00+00:00",
+            }
+
+        def list_documents(self, user_context, requested_store_id):
+            return [self.create_document(user_context, requested_store_id, SimpleNamespace(document_type="returns", source_type="manual", title="Returns", content="Returns within 30 days.", version="v1"))]
+
+        def get_document(self, user_context, requested_store_id, requested_policy_id):
+            assert str(requested_policy_id) == policy_id
+            return self.list_documents(user_context, requested_store_id)[0]
+
+        def update_document(self, user_context, requested_store_id, requested_policy_id, payload):
+            response = self.get_document(user_context, requested_store_id, requested_policy_id)
+            if payload.title:
+                response["title"] = payload.title
+            return response
+
+    class FakeSupportService:
+        def create_conversation(self, user_context, requested_store_id, payload):
+            assert str(requested_store_id) == store_id
+            return {
+                "id": conversation_id,
+                "store_id": store_id,
+                "customer_id": None,
+                "order_id": None,
+                "external_ticket_id": payload.external_ticket_id,
+                "channel": payload.channel,
+                "status": "open",
+                "assigned_user_id": None,
+                "created_at": "2026-05-26T00:00:00+00:00",
+                "updated_at": "2026-05-26T00:00:00+00:00",
+            }
+
+        def list_conversations(self, user_context, requested_store_id, status=None):
+            return [self.create_conversation(user_context, requested_store_id, SimpleNamespace(external_ticket_id="ticket-1", channel="internal_console"))]
+
+        def get_conversation(self, user_context, requested_store_id, requested_conversation_id):
+            assert str(requested_conversation_id) == conversation_id
+            return self.list_conversations(user_context, requested_store_id)[0]
+
+        def update_conversation_status(self, user_context, requested_store_id, requested_conversation_id, payload):
+            response = self.get_conversation(user_context, requested_store_id, requested_conversation_id)
+            response["status"] = payload.status
+            return response
+
+        def create_message(self, user_context, requested_store_id, requested_conversation_id, payload):
+            assert str(requested_conversation_id) == conversation_id
+            return {
+                "id": message_id,
+                "conversation_id": conversation_id,
+                "direction": payload.direction,
+                "body": payload.body,
+                "generated_by_ai": False,
+                "confidence_score": None,
+                "needs_human_review": False,
+                "review_reason_code": None,
+                "status": "logged",
+                "cited_policy_chunks_json": [],
+                "cited_order_facts_summary": None,
+                "created_by_user_id": user_context["user"]["id"],
+                "created_at": "2026-05-26T00:00:00+00:00",
+                "updated_at": "2026-05-26T00:00:00+00:00",
+            }
+
+        def list_messages(self, user_context, requested_store_id, requested_conversation_id):
+            return [self.create_message(user_context, requested_store_id, requested_conversation_id, SimpleNamespace(direction="inbound", body="Where is my order?"))]
+
+        def generate_reply_draft(self, user_context, requested_store_id, requested_conversation_id, payload):
+            assert str(requested_conversation_id) == conversation_id
+            return {"workflow_run_id": workflow_run_id, "agent_run_id": agent_run_id, "status": "queued"}
+
+    class FakeFraudService:
+        def get_order_risk_score(self, user_context, requested_store_id, requested_order_id):
+            return {"order_id": str(requested_order_id), "risk_score": 65, "risk_status": "high_risk"}
+
+        def list_risk_reviews(self, user_context, requested_store_id, risk_status=None):
+            return [self.get_risk_review(user_context, requested_store_id, review_id)]
+
+        def get_risk_review(self, user_context, requested_store_id, requested_review_id):
+            assert str(requested_review_id) == review_id
+            return {
+                "id": review_id,
+                "order_id": str(uuid4()),
+                "risk_score": 65,
+                "risk_status": "pending_review",
+                "reason_codes_json": ["billing_shipping_country_mismatch"],
+                "decision": None,
+                "decision_notes": None,
+                "reviewed_by_user_id": None,
+                "reviewed_at": None,
+                "created_at": "2026-05-26T00:00:00+00:00",
+                "updated_at": "2026-05-26T00:00:00+00:00",
+            }
+
+        def record_decision(self, user_context, requested_store_id, requested_review_id, payload):
+            response = self.get_risk_review(user_context, requested_store_id, requested_review_id)
+            response["decision"] = payload.decision
+            response["decision_notes"] = payload.decision_notes
+            response["risk_status"] = "reviewed"
+            response["reviewed_by_user_id"] = user_context["user"]["id"]
+            response["reviewed_at"] = "2026-05-26T00:00:00+00:00"
+            return response
+
+    class FakeInventoryService:
+        def list_alerts(self, user_context, requested_store_id, status=None):
+            return [
+                {
+                    "id": alert_id,
+                    "product_id": str(uuid4()),
+                    "variant_id": str(uuid4()),
+                    "threshold_value": 5,
+                    "current_quantity": 2,
+                    "status": "open",
+                    "resolved_at": None,
+                    "created_at": "2026-05-26T00:00:00+00:00",
+                    "updated_at": "2026-05-26T00:00:00+00:00",
+                }
+            ]
+
+        def list_reorder_suggestions(self, user_context, requested_store_id, status=None):
+            return [self.get_reorder_suggestion(user_context, requested_store_id, suggestion_id)]
+
+        def get_reorder_suggestion(self, user_context, requested_store_id, requested_suggestion_id):
+            assert str(requested_suggestion_id) == suggestion_id
+            return {
+                "id": suggestion_id,
+                "inventory_alert_id": alert_id,
+                "product_id": str(uuid4()),
+                "variant_id": str(uuid4()),
+                "recommended_quantity": 13,
+                "current_quantity": 2,
+                "threshold_value": 5,
+                "rationale_json": {"method": "deterministic_threshold_buffer"},
+                "status": "open",
+                "created_at": "2026-05-26T00:00:00+00:00",
+                "updated_at": "2026-05-26T00:00:00+00:00",
+                "supplier_draft": None,
+            }
+
+        def create_or_refresh_supplier_draft(self, user_context, requested_store_id, requested_suggestion_id, payload):
+            response = self.get_reorder_suggestion(user_context, requested_store_id, requested_suggestion_id)
+            response["supplier_draft"] = {
+                "id": str(uuid4()),
+                "vendor_name": payload.vendor_name or "Supplier",
+                "recipient_email": payload.recipient_email,
+                "subject": payload.subject or "Subject",
+                "body": payload.body or "Body",
+                "status": "draft",
+                "created_by_user_id": user_context["user"]["id"],
+                "created_at": "2026-05-26T00:00:00+00:00",
+                "updated_at": "2026-05-26T00:00:00+00:00",
+            }
+            return response
+
+    class FakeAnalyticsService:
+        def get_overview(self, user_context, requested_store_id, date_from=None, date_to=None):
+            return {
+                "range": {"date_from": "2026-04-26T00:00:00+00:00", "date_to": "2026-05-26T00:00:00+00:00"},
+                "generated_at": "2026-05-26T00:00:00+00:00",
+                "sections": {
+                    "sales": {"order_count": 1, "gross_sales_total": "19.99", "average_order_value": "19.99"},
+                    "inventory": {"open_low_stock_alert_count": 1, "open_reorder_suggestion_count": 1},
+                    "support": {"open_conversation_count": 1, "pending_support_review_count": 0, "support_drafts_generated_count": 1},
+                    "fraud": {"high_risk_order_count": 1, "pending_risk_review_count": 1},
+                    "operations": {"latest_sync_status": "succeeded", "latest_sync_completed_at": "2026-05-26T00:00:00+00:00", "pending_approval_count": 0},
+                },
+            }
+
+        def get_automation(self, user_context, requested_store_id, date_from=None, date_to=None):
+            return {
+                "range": {"date_from": "2026-04-26T00:00:00+00:00", "date_to": "2026-05-26T00:00:00+00:00"},
+                "generated_at": "2026-05-26T00:00:00+00:00",
+                "sections": {
+                    "automation": {
+                        "workflow_runs_total": 2,
+                        "workflow_failures_total": 0,
+                        "agent_runs_total": 2,
+                        "agent_runs_failed": 0,
+                        "product_content_drafts_generated_count": 1,
+                        "support_drafts_generated_count": 1,
+                    }
+                },
+            }
+
+    client.app.dependency_overrides[get_current_user_context] = _auth_context
+    client.app.dependency_overrides[get_policy_service] = lambda: FakePolicyService()
+    client.app.dependency_overrides[get_support_service] = lambda: FakeSupportService()
+    client.app.dependency_overrides[get_fraud_service] = lambda: FakeFraudService()
+    client.app.dependency_overrides[get_inventory_service] = lambda: FakeInventoryService()
+    client.app.dependency_overrides[get_analytics_service] = lambda: FakeAnalyticsService()
+    headers = {"Authorization": "Bearer test"}
+
+    assert client.post(f"/api/v1/stores/{store_id}/policies", json={"document_type": "returns", "source_type": "manual", "title": "Returns", "content": "Returns within 30 days.", "version": "v1"}, headers=headers).status_code == 201
+    assert client.get(f"/api/v1/stores/{store_id}/policies", headers=headers).status_code == 200
+    assert client.get(f"/api/v1/stores/{store_id}/policies/{policy_id}", headers=headers).status_code == 200
+    assert client.patch(f"/api/v1/stores/{store_id}/policies/{policy_id}", json={"title": "Updated Returns"}, headers=headers).status_code == 200
+    assert client.post(f"/api/v1/stores/{store_id}/support/conversations", json={"external_ticket_id": "ticket-1", "channel": "internal_console"}, headers=headers).status_code == 201
+    assert client.get(f"/api/v1/stores/{store_id}/support/conversations", headers=headers).status_code == 200
+    assert client.get(f"/api/v1/stores/{store_id}/support/conversations/{conversation_id}", headers=headers).status_code == 200
+    assert client.patch(f"/api/v1/stores/{store_id}/support/conversations/{conversation_id}", json={"status": "pending_review"}, headers=headers).status_code == 200
+    assert client.post(f"/api/v1/stores/{store_id}/support/conversations/{conversation_id}/messages", json={"direction": "inbound", "body": "Where is my order?"}, headers=headers).status_code == 201
+    assert client.get(f"/api/v1/stores/{store_id}/support/conversations/{conversation_id}/messages", headers=headers).status_code == 200
+    assert client.post(f"/api/v1/stores/{store_id}/support/conversations/{conversation_id}/reply-drafts/generate", json={}, headers=headers).status_code == 202
+    assert client.get(f"/api/v1/stores/{store_id}/orders/{uuid4()}/risk-score", headers=headers).status_code == 200
+    assert client.get(f"/api/v1/stores/{store_id}/risk-reviews", headers=headers).status_code == 200
+    assert client.get(f"/api/v1/stores/{store_id}/risk-reviews/{review_id}", headers=headers).status_code == 200
+    assert client.post(f"/api/v1/stores/{store_id}/risk-reviews/{review_id}/decision", json={"decision": "approved", "decision_notes": "Looks safe"}, headers=headers).status_code == 200
+    assert client.get(f"/api/v1/stores/{store_id}/inventory/alerts", headers=headers).status_code == 200
+    assert client.get(f"/api/v1/stores/{store_id}/inventory/reorder-suggestions", headers=headers).status_code == 200
+    assert client.get(f"/api/v1/stores/{store_id}/inventory/reorder-suggestions/{suggestion_id}", headers=headers).status_code == 200
+    assert client.post(f"/api/v1/stores/{store_id}/inventory/reorder-suggestions/{suggestion_id}/supplier-drafts", json={"vendor_name": "Supplier"}, headers=headers).status_code == 201
+    assert client.get(f"/api/v1/stores/{store_id}/analytics/overview", headers=headers).status_code == 200
+    assert client.get(f"/api/v1/stores/{store_id}/analytics/automation", headers=headers).status_code == 200
+    client.app.dependency_overrides.clear()
+    get_settings.cache_clear()
