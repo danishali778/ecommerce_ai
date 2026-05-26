@@ -1,0 +1,257 @@
+# CommerceOps AI - API Design
+
+The API is organized around operator workflows. Some endpoints complete immediately, while generation, sync, and execution endpoints queue background work and return `202 Accepted`.
+
+## API Surface Context
+
+```mermaid
+graph TD
+    CLIENT[Client / Swagger] --> AUTH[Auth APIs]
+    CLIENT --> STORES[Store + Integration APIs]
+    CLIENT --> SYNC[Sync APIs]
+    CLIENT --> PRODUCTS[Catalog + Draft APIs]
+    CLIENT --> APPROVALS[Approval APIs]
+    CLIENT --> SUPPORT[Support APIs]
+    CLIENT --> POLICIES[Policy APIs]
+    CLIENT --> FRAUD[Fraud APIs]
+    CLIENT --> INVENTORY[Inventory APIs]
+    CLIENT --> ANALYTICS[Analytics APIs]
+```
+
+## Request Execution Model
+
+```mermaid
+sequenceDiagram
+    participant C as Client
+    participant API as FastAPI
+    participant DB as Postgres
+    participant Q as Redis
+    participant W as Worker
+
+    C->>API: HTTP request
+    API->>DB: validate auth, scope, state
+    alt direct request
+        API->>DB: read/write resource
+        API-->>C: 200 / 201
+    else async request
+        API->>Q: enqueue task
+        API-->>C: 202 Accepted
+        Q->>W: execute task
+        W->>DB: persist final result
+    end
+```
+
+- Reads and small writes are synchronous.
+- Sync, AI generation, and publish execution are asynchronous.
+
+## Route Groups
+
+| Group | Main Purpose | Typical Mode |
+|---|---|---|
+| `auth` | login, logout, current user, session refresh | sync |
+| `stores` | store records and Shopify install flow | sync |
+| `sync-runs` | start sync, retry sync, inspect sync history | async trigger + sync reads |
+| `products` | product reads and content draft workflows | mixed |
+| `approvals` | review and execute publish-governed actions | mixed |
+| `support` | conversations, messages, reply drafts | mixed |
+| `policies` | policy CRUD and retrieval source material | mixed |
+| `fraud` | order risk score and review queue | sync reads + sync-triggered writes |
+| `inventory` | alerts, reorder suggestions, supplier drafts | sync reads + sync-triggered writes |
+| `analytics` | overview and automation metrics | sync |
+
+## Auth API Flow
+
+```mermaid
+sequenceDiagram
+    participant Client
+    participant API
+    participant Supabase
+    participant DB
+
+    Client->>API: login / refresh / me
+    API->>Supabase: authenticate or verify session
+    API->>DB: load app user + roles
+    API-->>Client: token context + permissions
+```
+
+- Auth is backed by Supabase Auth.
+- App roles and store scope come from the app database.
+
+## Store And Shopify Connect Flow
+
+```mermaid
+sequenceDiagram
+    participant Client
+    participant API
+    participant DB
+    participant Shopify
+
+    Client->>API: create store
+    API->>DB: persist store record
+    Client->>API: request install URL
+    API->>DB: persist oauth state
+    API-->>Client: install URL
+    Client->>Shopify: install app
+    Shopify->>API: OAuth callback
+    API->>DB: persist integration status
+```
+
+- Store creation and Shopify connection are separate steps.
+- The callback finishes the connection state in the backend.
+
+## Sync API Flow
+
+```mermaid
+sequenceDiagram
+    participant Client
+    participant API
+    participant DB
+    participant Redis
+    participant Worker
+
+    Client->>API: POST /sync-runs
+    API->>DB: create sync_run queued
+    API->>Redis: enqueue sync task
+    API-->>Client: 202 + sync_run_id
+    Redis->>Worker: execute sync
+    Worker->>DB: update sync status + counts
+    Client->>API: GET sync status
+    API-->>Client: current sync_run state
+```
+
+- Sync APIs are command + polling style.
+
+## Product Draft API Flow
+
+```mermaid
+sequenceDiagram
+    participant Client
+    participant API
+    participant DB
+    participant Redis
+    participant Worker
+    participant LLM
+
+    Client->>API: generate content draft
+    API->>DB: create workflow_run + agent_run
+    API->>Redis: enqueue generation
+    API-->>Client: 202 + run ids
+    Redis->>Worker: generate draft
+    Worker->>LLM: structured generation
+    Worker->>DB: save product_content_draft
+    Client->>API: fetch draft
+```
+
+- Draft generation is asynchronous.
+- Draft review and edit happen before approval submission.
+
+## Approval And Publish API Flow
+
+```mermaid
+sequenceDiagram
+    participant Client
+    participant API
+    participant DB
+    participant Redis
+    participant Worker
+    participant Shopify
+
+    Client->>API: submit approval / approve
+    API->>DB: validate approval state
+    API->>Redis: enqueue execution
+    API-->>Client: approval state
+    Redis->>Worker: execute publish
+    Worker->>Shopify: update product
+    Worker->>DB: mark executed or failed
+```
+
+- Approvals protect risky store writes.
+- Execution runs separately from human review.
+
+## Support And Policy API Flow
+
+```mermaid
+graph TD
+    CONV[Support Conversations API] --> MSG[Support Messages API]
+    MSG --> DRAFT[Reply Draft Generation API]
+    POL[Policies API] --> DRAFT
+    DRAFT --> RUNS[Workflow Run + Agent Run]
+    DRAFT --> OUT[Draft Outbound Message]
+```
+
+```mermaid
+sequenceDiagram
+    participant Client
+    participant API
+    participant DB
+    participant Redis
+    participant Worker
+    participant LLM
+
+    Client->>API: create policy / conversation / message
+    API->>DB: persist inputs
+    Client->>API: generate reply draft
+    API->>Redis: enqueue support task
+    Redis->>Worker: load policy chunks + order/customer context
+    Worker->>LLM: generate support draft
+    Worker->>DB: save cited draft message
+```
+
+- Policies act as retrieval source documents.
+- Support drafts stay internal and can be flagged for review.
+
+## Fraud API Flow
+
+```mermaid
+sequenceDiagram
+    participant Sync as Sync Worker
+    participant Fraud as Fraud Module
+    participant DB as Postgres
+    participant Client
+    participant API
+
+    Sync->>Fraud: score imported orders
+    Fraud->>DB: update risk_score + risk_status
+    Fraud->>DB: create risk_review if threshold exceeded
+    Client->>API: GET order risk score / risk reviews
+    API->>DB: read fraud state
+    API-->>Client: risk data
+```
+
+- Fraud scoring is triggered by sync, not by a standalone generation endpoint.
+- Review APIs expose the stored results.
+
+## Inventory API Flow
+
+```mermaid
+sequenceDiagram
+    participant Sync as Sync Worker
+    participant Inv as Inventory Module
+    participant DB as Postgres
+    participant Client
+    participant API
+
+    Sync->>Inv: evaluate imported variants
+    Inv->>DB: create or update inventory alerts
+    Inv->>DB: create reorder suggestions
+    Client->>API: list alerts / suggestions / drafts
+    API->>DB: read inventory state
+    API-->>Client: inventory intelligence
+```
+
+- Inventory APIs mainly expose worker-produced operational state.
+
+## Analytics API Flow
+
+```mermaid
+graph LR
+    API[Analytics APIs] --> PRODUCTS[Catalog Data]
+    API --> ORDERS[Order Data]
+    API --> SUPPORT[Support Data]
+    API --> FRAUD[Fraud Data]
+    API --> INV[Inventory Data]
+    API --> RUNS[Workflow + Agent + Approval Data]
+```
+
+- Analytics are read-only aggregate endpoints.
+- They summarize live application state rather than triggering new workflows.
