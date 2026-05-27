@@ -28,6 +28,8 @@ Releases/
 CHANGELOG.md
 CommerceOps_AI_PRD.md
 CommerceOps_AI_Release_Plan.md
+FRONTEND_IMPLEMENTATION_ROADMAP.md
+docs/public/frontend-design-reference.md
 
 # OS / editor
 .DS_Store
@@ -41,8 +43,9 @@ CommerceOps_AI_Release_Plan.md
 _worktrees/
 
 # Local scaffolding / non-repo work
-apps/web/
-packages/
+packages/*
+!packages/frontend/
+!packages/frontend/**
 supabase/
 tests/
 apps/api/*.secret

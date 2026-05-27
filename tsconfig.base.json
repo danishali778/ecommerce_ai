@@ -1,0 +1,27 @@
+{
+  "compilerOptions": {
+    "target": "ES2021",
+    "useDefineForClassFields": true,
+    "lib": ["ES2021", "DOM", "DOM.Iterable"],
+    "allowJs": false,
+    "skipLibCheck": true,
+    "esModuleInterop": true,
+    "allowSyntheticDefaultImports": true,
+    "strict": true,
+    "forceConsistentCasingInFileNames": true,
+    "module": "ESNext",
+    "moduleResolution": "Node",
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "noEmit": true,
+    "jsx": "react-jsx",
+    "baseUrl": ".",
+    "paths": {
+      "@frontend/ui": ["packages/frontend/ui/index.tsx"],
+      "@frontend/types": ["packages/frontend/types/index.ts"],
+      "@frontend/config": ["packages/frontend/config/index.ts"],
+      "@frontend/api-client": ["packages/frontend/api-client/index.ts"],
+      "@/*": ["apps/web/src/*"]
+    }
+  }
+}
