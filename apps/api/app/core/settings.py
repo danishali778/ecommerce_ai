@@ -24,6 +24,7 @@ class Settings(BaseSettings):
     refresh_cookie_secure: bool = False
     refresh_cookie_samesite: Literal["lax", "strict", "none"] = "lax"
     public_app_url: str | None = None
+    cors_allowed_origins: str | None = Field(default=None, alias="CORS_ALLOWED_ORIGINS")
 
     database_url: str = Field(alias="DATABASE_URL")
     redis_url: str = Field(default="redis://redis:6379/0", alias="REDIS_URL")
@@ -69,6 +70,25 @@ class Settings(BaseSettings):
     @property
     def resolved_celery_result_backend(self) -> str:
         return self.celery_result_backend or self.redis_url
+
+    @property
+    def resolved_cors_allowed_origins(self) -> list[str]:
+        origins: list[str] = []
+        if self.cors_allowed_origins:
+            origins.extend(
+                origin.strip()
+                for origin in self.cors_allowed_origins.split(",")
+                if origin.strip()
+            )
+        elif self.public_app_url:
+            origins.append(self.public_app_url.rstrip("/"))
+
+        if self.app_env == "development":
+            for dev_origin in ("http://localhost:5173", "http://127.0.0.1:5173"):
+                if dev_origin not in origins:
+                    origins.append(dev_origin)
+
+        return origins
 
     @model_validator(mode="after")
     def validate_required_runtime_settings(self) -> "Settings":
