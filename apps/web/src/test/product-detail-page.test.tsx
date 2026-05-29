@@ -10,10 +10,11 @@ const submitDraftForApprovalMock = vi.fn();
 
 vi.mock("@frontend/api-client", async () => {
   const actual = await vi.importActual<object>("@frontend/api-client");
+  const base = actual as Record<string, any>;
   return {
-    ...actual,
+    ...base,
     catalogApi: {
-      ...(actual as Record<string, unknown>).catalogApi,
+      ...base.catalogApi,
       getProduct: (...args: unknown[]) => getProductMock(...args),
       listDrafts: (...args: unknown[]) => listDraftsMock(...args),
       updateDraft: (...args: unknown[]) => updateDraftMock(...args),
