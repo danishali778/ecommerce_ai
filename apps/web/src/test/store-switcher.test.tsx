@@ -9,11 +9,11 @@ const useAuthMock = vi.fn();
 const useAppStateMock = vi.fn();
 const notificationsListMock = vi.fn();
 
-vi.mock("@/app/use-auth", () => ({
+vi.mock("@/hooks/use-auth", () => ({
   useAuth: () => useAuthMock()
 }));
 
-vi.mock("@/app/use-app-state", () => ({
+vi.mock("@/hooks/use-app-state", () => ({
   useAppState: () => useAppStateMock()
 }));
 
