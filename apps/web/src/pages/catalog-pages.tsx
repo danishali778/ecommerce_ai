@@ -1,16 +1,21 @@
 import * as React from "react";
 import { Link, useParams } from "react-router-dom";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-
-import { catalogApi } from "@frontend/api-client";
 import { Button, Card, Input, Textarea } from "@frontend/ui";
 
 import { DraftStatusBanner, EmptyState, ErrorState, KeyValueGrid, LoadingSkeleton, MetricCard, PageHeader, SectionCard, Table } from "@/components/common";
+import {
+  useGenerateProductDraft,
+  useProduct,
+  useProductDrafts,
+  useProducts,
+  useSubmitProductDraftForApproval,
+  useUpdateProductDraft
+} from "@/hooks/use-catalog";
 import { formatDate, titleize } from "@/lib/format";
 
 export function CatalogPage() {
   const { storeId = "" } = useParams();
-  const productsQuery = useQuery({ queryKey: ["products", storeId], queryFn: () => catalogApi.listProducts(storeId), enabled: Boolean(storeId) });
+  const productsQuery = useProducts(storeId);
 
   return (
     <div className="space-y-8">
@@ -35,9 +40,8 @@ export function CatalogPage() {
 
 export function ProductDetailPage() {
   const { storeId = "", productId = "" } = useParams();
-  const queryClient = useQueryClient();
-  const productQuery = useQuery({ queryKey: ["product", storeId, productId], queryFn: () => catalogApi.getProduct(storeId, productId), enabled: Boolean(storeId && productId) });
-  const draftsQuery = useQuery({ queryKey: ["product-drafts", storeId, productId], queryFn: () => catalogApi.listDrafts(storeId, productId), enabled: Boolean(storeId && productId) });
+  const productQuery = useProduct(storeId, productId);
+  const draftsQuery = useProductDrafts(storeId, productId);
   const [draftForm, setDraftForm] = React.useState({ generated_title: "", generated_description: "", generated_seo_title: "", generated_seo_description: "", generated_tags: "" });
   const [approvalReason, setApprovalReason] = React.useState("Draft is ready for review.");
 
@@ -54,36 +58,13 @@ export function ProductDetailPage() {
     });
   }, [activeDraft]);
 
-  const generateMutation = useMutation({
-    mutationFn: () =>
-      catalogApi.generateDraft(storeId, productId, {
-        generation_targets: ["description", "seo", "tags"],
-        tone: "clear_and_premium",
-        constraints: { brand_style: "clean, modern, ecommerce-ready" }
-      }),
-    onSuccess: () => draftsQuery.refetch()
-  });
-  const updateMutation = useMutation({
-    mutationFn: () =>
-      catalogApi.updateDraft(storeId, productId, activeDraft!.id, {
-        generated_title: draftForm.generated_title || null,
-        generated_description: draftForm.generated_description || null,
-        generated_seo_title: draftForm.generated_seo_title || null,
-        generated_seo_description: draftForm.generated_seo_description || null,
-        generated_tags: draftForm.generated_tags.split(",").map((item) => item.trim()).filter(Boolean)
-      }),
-    onSuccess: () => {
-      draftsQuery.refetch();
-      productQuery.refetch();
-    }
-  });
-  const submitApprovalMutation = useMutation({
-    mutationFn: () => catalogApi.submitDraftForApproval(storeId, productId, activeDraft!.id, approvalReason),
-    onSuccess: () => {
-      draftsQuery.refetch();
-      productQuery.refetch();
-    }
-  });
+  const refreshDraftData = () => {
+    draftsQuery.refetch();
+    productQuery.refetch();
+  };
+  const generateMutation = useGenerateProductDraft(storeId, productId, refreshDraftData);
+  const updateMutation = useUpdateProductDraft(storeId, productId, activeDraft?.id ?? null, refreshDraftData);
+  const submitApprovalMutation = useSubmitProductDraftForApproval(storeId, productId, activeDraft?.id ?? null, refreshDraftData);
 
   if (productQuery.isLoading) return <LoadingSkeleton rows={6} />;
   if (productQuery.isError) return <ErrorState title="Unable to load product" message="The selected product could not be loaded." retry={() => productQuery.refetch()} />;
@@ -128,7 +109,18 @@ export function ProductDetailPage() {
                   {generateMutation.isPending ? "Generating..." : "Regenerate"}
                 </Button>
                 {activeDraft ? (
-                  <Button onClick={() => updateMutation.mutate()} disabled={updateMutation.isPending}>
+                  <Button
+                    onClick={() =>
+                      updateMutation.mutate({
+                        generated_title: draftForm.generated_title || null,
+                        generated_description: draftForm.generated_description || null,
+                        generated_seo_title: draftForm.generated_seo_title || null,
+                        generated_seo_description: draftForm.generated_seo_description || null,
+                        generated_tags: draftForm.generated_tags.split(",").map((item) => item.trim()).filter(Boolean)
+                      })
+                    }
+                    disabled={updateMutation.isPending}
+                  >
                     Save Draft
                   </Button>
                 ) : (
@@ -151,7 +143,7 @@ export function ProductDetailPage() {
                   <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Approval submission reason</p>
                   <Textarea className="mt-3" value={approvalReason} onChange={(event) => setApprovalReason(event.target.value)} />
                 </Card>
-                <Button className="w-full" onClick={() => submitApprovalMutation.mutate()} disabled={submitApprovalMutation.isPending}>
+                <Button className="w-full" onClick={() => submitApprovalMutation.mutate(approvalReason)} disabled={submitApprovalMutation.isPending}>
                   {submitApprovalMutation.isPending ? "Submitting..." : "Submit for Approval"}
                 </Button>
                 {submitApprovalMutation.data ? (
