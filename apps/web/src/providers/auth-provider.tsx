@@ -3,7 +3,7 @@ import * as React from "react";
 import { authApi, configureApiAuth } from "@frontend/api-client";
 import type { AuthTokenResponse, MeResponse } from "@frontend/types";
 
-type AuthContextValue = {
+export type AuthContextValue = {
   accessToken: string | null;
   me: MeResponse | null;
   initialized: boolean;
@@ -15,7 +15,7 @@ type AuthContextValue = {
   reloadMe: () => Promise<void>;
 };
 
-const AuthContext = React.createContext<AuthContextValue | null>(null);
+export const AuthContext = React.createContext<AuthContextValue | null>(null);
 
 async function toSession(result: AuthTokenResponse, setAccessToken: (token: string | null) => void) {
   setAccessToken(result.access_token);
@@ -111,10 +111,4 @@ export function AuthProvider({ children }: React.PropsWithChildren) {
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
-}
-
-export function useAuth() {
-  const context = React.useContext(AuthContext);
-  if (!context) throw new Error("useAuth must be used within AuthProvider");
-  return context;
 }

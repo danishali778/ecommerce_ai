@@ -1,8 +1,8 @@
 import * as React from "react";
 
-import { useAuth } from "@/app/use-auth";
+import { useAuth } from "@/hooks/use-auth";
 
-type AppStateContextValue = {
+export type AppStateContextValue = {
   selectedStoreId: string | null;
   setSelectedStoreId: (storeId: string | null) => void;
   sidebarOpen: boolean;
@@ -10,7 +10,8 @@ type AppStateContextValue = {
 };
 
 const STORAGE_KEY = "commerceops:selected-store";
-const AppStateContext = React.createContext<AppStateContextValue | null>(null);
+
+export const AppStateContext = React.createContext<AppStateContextValue | null>(null);
 
 export function AppStateProvider({ children }: React.PropsWithChildren) {
   const { me } = useAuth();
@@ -33,15 +34,10 @@ export function AppStateProvider({ children }: React.PropsWithChildren) {
     }
   }, []);
 
-  return (
-    <AppStateContext.Provider value={{ selectedStoreId, setSelectedStoreId, sidebarOpen, setSidebarOpen }}>
-      {children}
-    </AppStateContext.Provider>
+  const value = React.useMemo(
+    () => ({ selectedStoreId, setSelectedStoreId, sidebarOpen, setSidebarOpen }),
+    [selectedStoreId, setSelectedStoreId, sidebarOpen]
   );
-}
 
-export function useAppState() {
-  const context = React.useContext(AppStateContext);
-  if (!context) throw new Error("useAppState must be used within AppStateProvider");
-  return context;
+  return <AppStateContext.Provider value={value}>{children}</AppStateContext.Provider>;
 }
