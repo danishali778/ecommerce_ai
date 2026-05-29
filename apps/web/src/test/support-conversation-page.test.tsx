@@ -4,16 +4,19 @@ import { SupportConversationPage } from "@/pages";
 import { renderWithProviders } from "@/test/utils";
 
 const getConversationMock = vi.fn();
+const listConversationsMock = vi.fn();
 const listMessagesMock = vi.fn();
 const getCustomerMock = vi.fn();
 const getOrderMock = vi.fn();
 
 vi.mock("@frontend/api-client", async () => {
   const actual = await vi.importActual<object>("@frontend/api-client");
+  const base = actual as Record<string, any>;
   return {
-    ...actual,
+    ...base,
     supportApi: {
-      ...(actual as Record<string, unknown>).supportApi,
+      ...base.supportApi,
+      listConversations: (...args: unknown[]) => listConversationsMock(...args),
       getConversation: (...args: unknown[]) => getConversationMock(...args),
       listMessages: (...args: unknown[]) => listMessagesMock(...args),
       updateConversation: vi.fn(),
@@ -21,7 +24,7 @@ vi.mock("@frontend/api-client", async () => {
       generateDraft: vi.fn()
     },
     catalogApi: {
-      ...(actual as Record<string, unknown>).catalogApi,
+      ...base.catalogApi,
       getCustomer: (...args: unknown[]) => getCustomerMock(...args),
       getOrder: (...args: unknown[]) => getOrderMock(...args)
     }
@@ -42,6 +45,20 @@ describe("support conversation page", () => {
       created_at: "2026-05-26T10:00:00.000Z",
       updated_at: "2026-05-26T10:10:00.000Z"
     });
+    listConversationsMock.mockResolvedValue([
+      {
+        id: "conv-1",
+        store_id: "store-1",
+        customer_id: "customer-1",
+        order_id: "order-1",
+        external_ticket_id: "ticket-1",
+        channel: "internal_console",
+        status: "pending_review",
+        assigned_user_id: null,
+        created_at: "2026-05-26T10:00:00.000Z",
+        updated_at: "2026-05-26T10:10:00.000Z"
+      }
+    ]);
     listMessagesMock.mockResolvedValue([
       {
         id: "msg-1",
@@ -85,8 +102,9 @@ describe("support conversation page", () => {
       path: "/app/support/:storeId/conversations/:conversationId"
     });
 
-    expect(await screen.findByText("Operator next steps")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Mark ready for manual send" })).toBeInTheDocument();
+    expect(await screen.findByText("CommerceOps AI (Internal Draft)")).toBeInTheDocument();
+    expect(screen.getByText("Operator Review Required - Low Confidence.")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Mark Ready for Manual Send" })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Approve & Send" })).not.toBeInTheDocument();
   });
 });
