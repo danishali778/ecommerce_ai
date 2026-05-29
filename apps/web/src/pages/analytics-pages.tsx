@@ -1,6 +1,5 @@
 import * as React from "react";
 import { Link, useParams } from "react-router-dom";
-import { useQuery } from "@tanstack/react-query";
 import { Activity, AlertTriangle, Bot, Box, ChartColumn, ShieldAlert } from "lucide-react";
 import {
   Bar,
@@ -13,9 +12,8 @@ import {
   XAxis,
   YAxis
 } from "recharts";
-
-import { analyticsApi } from "@frontend/api-client";
 import { Button, Card, Input } from "@frontend/ui";
+import { useAnalyticsAutomation, useAnalyticsOverview } from "@/hooks/use-analytics";
 import {
   EmptyState,
   ErrorState,
@@ -179,11 +177,7 @@ export function AnalyticsOverviewPage() {
   const [dateFrom, setDateFrom] = React.useState("");
   const [dateTo, setDateTo] = React.useState("");
 
-  const overviewQuery = useQuery({
-    queryKey: ["analytics", "overview", storeId, dateFrom, dateTo],
-    queryFn: () => analyticsApi.getOverview(storeId, { date_from: dateFrom || undefined, date_to: dateTo || undefined }),
-    enabled: Boolean(storeId)
-  });
+  const overviewQuery = useAnalyticsOverview(storeId, { date_from: dateFrom || undefined, date_to: dateTo || undefined });
 
   if (overviewQuery.isLoading) return <LoadingSkeleton rows={7} />;
   if (overviewQuery.isError) {
@@ -319,11 +313,7 @@ export function AnalyticsAutomationPage() {
   const [dateFrom, setDateFrom] = React.useState("");
   const [dateTo, setDateTo] = React.useState("");
 
-  const automationQuery = useQuery({
-    queryKey: ["analytics", "automation", storeId, dateFrom, dateTo],
-    queryFn: () => analyticsApi.getAutomation(storeId, { date_from: dateFrom || undefined, date_to: dateTo || undefined }),
-    enabled: Boolean(storeId)
-  });
+  const automationQuery = useAnalyticsAutomation(storeId, { date_from: dateFrom || undefined, date_to: dateTo || undefined });
 
   if (automationQuery.isLoading) return <LoadingSkeleton rows={6} />;
   if (automationQuery.isError) {
