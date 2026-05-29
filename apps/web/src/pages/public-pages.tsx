@@ -4,7 +4,7 @@ import { Link, useLocation, useNavigate } from "react-router-dom";
 
 import { Button, Card, Input, PasswordInput } from "@frontend/ui";
 
-import { useAuth } from "@/app/use-auth";
+import { useAuth } from "@/hooks/use-auth";
 
 function MarketingSection({
   id,

@@ -1,6 +1,5 @@
 import * as React from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   ArrowUpRight,
   CheckCircle2,
@@ -11,12 +10,23 @@ import {
   Store as StoreIcon,
   Workflow
 } from "lucide-react";
-
-import { storesApi } from "@frontend/api-client";
 import { Button, Card, Input } from "@frontend/ui";
 
-import { useAuth } from "@/app/use-auth";
-import { useAppState } from "@/app/use-app-state";
+import { useAuth } from "@/hooks/use-auth";
+import { useAppState } from "@/hooks/use-app-state";
+import {
+  useCreateStore,
+  useCreateStoreInstallUrl,
+  useDashboardSummary,
+  useRunDashboardSync,
+  useStore,
+  useStoreIntegration,
+  useStoresList,
+  useStoreSyncRun,
+  useStoreSyncRuns,
+  useTriggerStoreSync,
+  useRetryStoreSyncRun
+} from "@/hooks/use-stores";
 import {
   ActivityTimeline,
   DetailPanel,
@@ -75,22 +85,10 @@ export function DashboardPage() {
   const { me } = useAuth();
   const { selectedStoreId } = useAppState();
   const navigate = useNavigate();
-  const queryClient = useQueryClient();
-
-  const summaryQuery = useQuery({
-    queryKey: ["dashboard", selectedStoreId],
-    queryFn: () => storesApi.getDashboardSummary(selectedStoreId!),
-    enabled: Boolean(selectedStoreId)
-  });
-
-  const syncMutation = useMutation({
-    mutationFn: () => storesApi.createSyncRun(selectedStoreId!, "manual_full"),
-    onSuccess: () => {
-      if (selectedStoreId) {
-        queryClient.invalidateQueries({ queryKey: ["dashboard", selectedStoreId] });
-        queryClient.invalidateQueries({ queryKey: ["stores", "sync-runs", selectedStoreId] });
-        navigate(`/app/stores/${selectedStoreId}/sync-runs`);
-      }
+  const summaryQuery = useDashboardSummary(selectedStoreId);
+  const syncMutation = useRunDashboardSync(selectedStoreId, () => {
+    if (selectedStoreId) {
+      navigate(`/app/stores/${selectedStoreId}/sync-runs`);
     }
   });
 
@@ -258,7 +256,6 @@ export function DashboardPage() {
 }
 
 export function StoreListPage() {
-  const queryClient = useQueryClient();
   const navigate = useNavigate();
   const { me } = useAuth();
   const { selectedStoreId, setSelectedStoreId } = useAppState();
@@ -269,26 +266,11 @@ export function StoreListPage() {
     timezone: "UTC"
   });
 
-  const storesQuery = useQuery({
-    queryKey: ["stores"],
-    queryFn: () => storesApi.list()
-  });
-
-  const createStore = useMutation({
-    mutationFn: () =>
-      storesApi.create({
-        name: form.name,
-        domain: form.domain,
-        currency: form.currency,
-        timezone: form.timezone
-      }),
-    onSuccess: (store) => {
-      queryClient.invalidateQueries({ queryKey: ["stores"] });
-      queryClient.invalidateQueries({ queryKey: ["auth-me"] });
-      setSelectedStoreId(store.id);
-      navigate(`/app/stores/${store.id}`);
-      setForm({ name: "", domain: "", currency: "USD", timezone: "UTC" });
-    }
+  const storesQuery = useStoresList();
+  const createStore = useCreateStore((store) => {
+    setSelectedStoreId(store.id);
+    navigate(`/app/stores/${store.id}`);
+    setForm({ name: "", domain: "", currency: "USD", timezone: "UTC" });
   });
 
   const stores = storesQuery.data ?? me?.accessible_stores ?? [];
@@ -348,7 +330,12 @@ export function StoreListPage() {
             className="space-y-4"
             onSubmit={(event) => {
               event.preventDefault();
-              createStore.mutate();
+              createStore.mutate({
+                name: form.name,
+                domain: form.domain,
+                currency: form.currency,
+                timezone: form.timezone
+              });
             }}
           >
             <Input value={form.name} onChange={(event) => setForm((current) => ({ ...current, name: event.target.value }))} placeholder="Store name" />
@@ -372,11 +359,7 @@ export function StoreDetailPage() {
   const { storeId = "" } = useParams();
   const { setSelectedStoreId } = useAppState();
 
-  const storeQuery = useQuery({
-    queryKey: ["store", storeId],
-    queryFn: () => storesApi.get(storeId),
-    enabled: Boolean(storeId)
-  });
+  const storeQuery = useStore(storeId);
 
   React.useEffect(() => {
     if (storeId) setSelectedStoreId(storeId);
@@ -450,15 +433,8 @@ export function StoreDetailPage() {
 export function StoreIntegrationPage() {
   const { storeId = "" } = useParams();
 
-  const integrationQuery = useQuery({
-    queryKey: ["store", "integration", storeId],
-    queryFn: () => storesApi.getIntegration(storeId),
-    enabled: Boolean(storeId)
-  });
-
-  const installUrlMutation = useMutation({
-    mutationFn: () => storesApi.createInstallUrl(storeId, `${window.location.origin}/shopify/callback`)
-  });
+  const integrationQuery = useStoreIntegration(storeId);
+  const installUrlMutation = useCreateStoreInstallUrl(storeId);
 
   if (integrationQuery.isLoading) return <LoadingSkeleton rows={4} />;
   if (integrationQuery.isError) {
@@ -523,35 +499,15 @@ export function StoreIntegrationPage() {
 
 export function StoreSyncRunsPage() {
   const { storeId = "" } = useParams();
-  const queryClient = useQueryClient();
   const [selectedRunId, setSelectedRunId] = React.useState<string | null>(null);
 
-  const runsQuery = useQuery({
-    queryKey: ["stores", "sync-runs", storeId],
-    queryFn: () => storesApi.listSyncRuns(storeId),
-    enabled: Boolean(storeId)
+  const runsQuery = useStoreSyncRuns(storeId);
+  const selectedRunQuery = useStoreSyncRun(storeId, selectedRunId);
+  const triggerRun = useTriggerStoreSync(storeId, (run) => {
+    setSelectedRunId(run.id);
   });
-
-  const selectedRunQuery = useQuery({
-    queryKey: ["stores", "sync-run", storeId, selectedRunId],
-    queryFn: () => storesApi.getSyncRun(storeId, selectedRunId!),
-    enabled: Boolean(storeId && selectedRunId)
-  });
-
-  const triggerRun = useMutation({
-    mutationFn: () => storesApi.createSyncRun(storeId, "manual_full"),
-    onSuccess: (run) => {
-      queryClient.invalidateQueries({ queryKey: ["stores", "sync-runs", storeId] });
-      setSelectedRunId(run.id);
-    }
-  });
-
-  const retryRun = useMutation({
-    mutationFn: (syncRunId: string) => storesApi.retrySyncRun(storeId, syncRunId),
-    onSuccess: (run) => {
-      queryClient.invalidateQueries({ queryKey: ["stores", "sync-runs", storeId] });
-      setSelectedRunId(run.id);
-    }
+  const retryRun = useRetryStoreSyncRun(storeId, (run) => {
+    setSelectedRunId(run.id);
   });
 
   const runs = runsQuery.data ?? [];
