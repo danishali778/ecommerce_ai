@@ -1,10 +1,10 @@
 import * as React from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { AlertTriangle, CheckCircle2, Clock3, Filter, RefreshCw, Search, XCircle } from "lucide-react";
 
 import { approvalsApi } from "@frontend/api-client";
 import { Button, Card, Checkbox, Input, Textarea } from "@frontend/ui";
+import { useApproval, useApprovalActions, useApprovals } from "@/hooks/use-approvals";
 
 import {
   DetailPanel,
@@ -89,30 +89,15 @@ function ApprovalQueueRow({
 }
 
 export function ApprovalsPage() {
-  const approvalsQuery = useQuery({ queryKey: ["approvals"], queryFn: () => approvalsApi.list() });
-  const queryClient = useQueryClient();
+  const approvalsQuery = useApprovals();
   const navigate = useNavigate();
   const [search, setSearch] = React.useState("");
   const [selectedIds, setSelectedIds] = React.useState<string[]>([]);
   const [batchNotes, setBatchNotes] = React.useState("");
 
-  const actionMutation = useMutation({
-    mutationFn: async ({ action, approvalIds }: { action: "approve" | "reject" | "cancel" | "retry"; approvalIds: string[] }) => {
-      const notes = batchNotes || notesFromAction(action, approvalIds.length);
-      await Promise.all(
-        approvalIds.map((approvalId) => {
-          if (action === "approve") return approvalsApi.approve(approvalId, notes);
-          if (action === "reject") return approvalsApi.reject(approvalId, notes);
-          if (action === "cancel") return approvalsApi.cancel(approvalId, notes);
-          return approvalsApi.retryExecution(approvalId, notes);
-        })
-      );
-    },
-    onSuccess: () => {
-      setSelectedIds([]);
-      setBatchNotes("");
-      queryClient.invalidateQueries({ queryKey: ["approvals"] });
-    }
+  const actionMutation = useApprovalActions(() => {
+    setSelectedIds([]);
+    setBatchNotes("");
   });
 
   if (approvalsQuery.isLoading) return <LoadingSkeleton rows={6} />;
@@ -207,14 +192,44 @@ export function ApprovalsPage() {
                   <Button variant="secondary" className="border-slate-700 bg-slate-900 text-white hover:bg-slate-800" onClick={() => setSelectedIds([])}>
                     Clear selection
                   </Button>
-                  <Button variant="secondary" className="border-slate-700 bg-slate-900 text-white hover:bg-slate-800" onClick={() => actionMutation.mutate({ action: "cancel", approvalIds: selectedIds })} disabled={actionMutation.isPending}>
+                  <Button
+                    variant="secondary"
+                    className="border-slate-700 bg-slate-900 text-white hover:bg-slate-800"
+                    onClick={() =>
+                      actionMutation.mutate({
+                        action: "cancel",
+                        approvalIds: selectedIds,
+                        notes: batchNotes || notesFromAction("cancel", selectedIds.length)
+                      })
+                    }
+                    disabled={actionMutation.isPending}
+                  >
                     Escalate selected
                   </Button>
-                  <Button variant="danger" onClick={() => actionMutation.mutate({ action: "reject", approvalIds: selectedIds })} disabled={actionMutation.isPending}>
+                  <Button
+                    variant="danger"
+                    onClick={() =>
+                      actionMutation.mutate({
+                        action: "reject",
+                        approvalIds: selectedIds,
+                        notes: batchNotes || notesFromAction("reject", selectedIds.length)
+                      })
+                    }
+                    disabled={actionMutation.isPending}
+                  >
                     <XCircle className="mr-2 h-4 w-4" />
                     Reject selected
                   </Button>
-                  <Button onClick={() => actionMutation.mutate({ action: "approve", approvalIds: selectedIds })} disabled={actionMutation.isPending}>
+                  <Button
+                    onClick={() =>
+                      actionMutation.mutate({
+                        action: "approve",
+                        approvalIds: selectedIds,
+                        notes: batchNotes || notesFromAction("approve", selectedIds.length)
+                      })
+                    }
+                    disabled={actionMutation.isPending}
+                  >
                     <CheckCircle2 className="mr-2 h-4 w-4" />
                     Approve selected
                   </Button>
@@ -238,35 +253,25 @@ function ApprovalDetailActions({
   onDone: () => void;
 }) {
   const [notes, setNotes] = React.useState("");
-  const [action, setAction] = React.useState<null | "approve" | "reject" | "cancel" | "retry">(null);
-  const mutation = useMutation({
-    mutationFn: async () => {
-      if (action === "approve") return approvalsApi.approve(approvalId, notes);
-      if (action === "reject") return approvalsApi.reject(approvalId, notes);
-      if (action === "cancel") return approvalsApi.cancel(approvalId, notes);
-      return approvalsApi.retryExecution(approvalId, notes);
-    },
-    onSuccess: () => {
-      setNotes("");
-      setAction(null);
-      onDone();
-    }
+  const mutation = useApprovalActions(() => {
+    setNotes("");
+    onDone();
   });
 
   return (
     <div className="space-y-4">
       <Textarea placeholder="Reviewer notes" value={notes} onChange={(event) => setNotes(event.target.value)} />
       <div className="flex flex-wrap gap-3">
-        <Button onClick={() => { setAction("approve"); mutation.mutate(); }} disabled={mutation.isPending}>
+        <Button onClick={() => { mutation.mutate({ action: "approve", approvalIds: [approvalId], notes }); }} disabled={mutation.isPending}>
           Approve
         </Button>
-        <Button variant="danger" onClick={() => { setAction("reject"); mutation.mutate(); }} disabled={mutation.isPending}>
+        <Button variant="danger" onClick={() => { mutation.mutate({ action: "reject", approvalIds: [approvalId], notes }); }} disabled={mutation.isPending}>
           Reject
         </Button>
-        <Button variant="secondary" onClick={() => { setAction("cancel"); mutation.mutate(); }} disabled={mutation.isPending}>
+        <Button variant="secondary" onClick={() => { mutation.mutate({ action: "cancel", approvalIds: [approvalId], notes }); }} disabled={mutation.isPending}>
           Escalate / Cancel
         </Button>
-        <Button variant="secondary" onClick={() => { setAction("retry"); mutation.mutate(); }} disabled={mutation.isPending}>
+        <Button variant="secondary" onClick={() => { mutation.mutate({ action: "retry", approvalIds: [approvalId], notes }); }} disabled={mutation.isPending}>
           Retry execution
         </Button>
       </div>
@@ -277,9 +282,8 @@ function ApprovalDetailActions({
 
 export function ApprovalDetailPage() {
   const { approvalId = "" } = useParams();
-  const queryClient = useQueryClient();
   const navigate = useNavigate();
-  const approvalQuery = useQuery({ queryKey: ["approval", approvalId], queryFn: () => approvalsApi.get(approvalId), enabled: Boolean(approvalId) });
+  const approvalQuery = useApproval(approvalId);
 
   if (approvalQuery.isLoading) return <LoadingSkeleton rows={5} />;
   if (approvalQuery.isError || !approvalQuery.data) {
@@ -331,7 +335,6 @@ export function ApprovalDetailPage() {
             <ApprovalDetailActions
               approvalId={approval.id}
               onDone={() => {
-                queryClient.invalidateQueries({ queryKey: ["approvals"] });
                 approvalQuery.refetch();
               }}
             />
