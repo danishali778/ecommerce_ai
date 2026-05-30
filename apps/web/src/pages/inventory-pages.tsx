@@ -15,6 +15,7 @@ import {
   StatusPill,
   SupplierDraftCard
 } from "@/components/common";
+import { useProducts } from "@/hooks/use-catalog";
 import { useInventoryAlerts, useReorderSuggestions, useSaveSupplierDraft } from "@/hooks/use-inventory";
 import { formatDate } from "@/lib/format";
 
@@ -30,6 +31,77 @@ function stringFromRationale(value: unknown, fallback = "Unknown") {
   return typeof value === "string" && value.trim() ? value : fallback;
 }
 
+function uuidLike(value?: string | null) {
+  if (!value) return false;
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value.trim());
+}
+
+function readableInventoryValue(value?: string | null) {
+  if (!value) return null;
+  const trimmed = value.trim();
+  if (!trimmed || uuidLike(trimmed)) return null;
+  return trimmed;
+}
+
+function inventoryDisplayName({
+  productId,
+  variantId,
+  productTitle,
+  rationale
+}: {
+  productId: string;
+  variantId?: string | null;
+  productTitle?: string | null;
+  rationale?: Record<string, unknown>;
+}) {
+  const readableProductTitle = readableInventoryValue(productTitle);
+  if (readableProductTitle) return readableProductTitle;
+
+  const rationaleCandidates = rationale
+    ? [
+        rationale.product_title,
+        rationale.variant_title,
+        rationale.product_name,
+        rationale.variant_name,
+        rationale.sku
+      ]
+    : [];
+
+  for (const candidate of rationaleCandidates) {
+    if (typeof candidate === "string") {
+      const readable = readableInventoryValue(candidate);
+      if (readable) return readable;
+    }
+  }
+
+  return readableInventoryValue(variantId) ?? readableInventoryValue(productId) ?? "Inventory item";
+}
+
+function inventoryDisplayMeta({
+  productId,
+  variantId,
+  productTitle,
+  rationale
+}: {
+  productId: string;
+  variantId?: string | null;
+  productTitle?: string | null;
+  rationale?: Record<string, unknown>;
+}): string | null {
+  const sku = rationale && typeof rationale.sku === "string" ? readableInventoryValue(rationale.sku) : null;
+  const readableVariant = readableInventoryValue(variantId);
+  const readableProduct = readableInventoryValue(productId);
+  const readableProductTitle = readableInventoryValue(productTitle);
+  const readableVariantTitle =
+    rationale && typeof rationale.variant_title === "string" ? readableInventoryValue(rationale.variant_title) : null;
+
+  if (sku) return `SKU ${sku}`;
+  if (readableVariantTitle && readableVariantTitle !== readableProductTitle) return readableVariantTitle;
+  if (readableVariant && readableProduct && readableVariant !== readableProduct) return readableVariant;
+  if (readableProduct && readableProduct !== readableProductTitle) return readableProduct;
+  return null;
+}
+
 export function InventoryPage() {
   const { storeId = "" } = useParams();
   const [statusFilter, setStatusFilter] = useState("");
@@ -39,6 +111,8 @@ export function InventoryPage() {
 
   const alertsQuery = useInventoryAlerts(storeId, statusFilter || undefined);
   const suggestionsQuery = useReorderSuggestions(storeId, statusFilter || undefined);
+  const productsQuery = useProducts(storeId);
+  const productsById = useMemo(() => new Map((productsQuery.data ?? []).map((product) => [product.id, product])), [productsQuery.data]);
 
   const suggestions = useMemo(
     () =>
@@ -62,10 +136,11 @@ export function InventoryPage() {
     }
   }, [selectedSuggestionId, suggestions]);
 
-  const selectedSuggestion = useMemo(
-    () => suggestions.find((suggestion) => suggestion.id === selectedSuggestionId) ?? null,
-    [selectedSuggestionId, suggestions]
-  );
+  const selectedSuggestion = useMemo(() => {
+    if (!suggestions.length) return null;
+    if (!selectedSuggestionId) return suggestions[0] ?? null;
+    return suggestions.find((suggestion) => suggestion.id === selectedSuggestionId) ?? suggestions[0] ?? null;
+  }, [selectedSuggestionId, suggestions]);
 
   const [draftForm, setDraftForm] = useState({
     vendor_name: "",
@@ -89,15 +164,22 @@ export function InventoryPage() {
 
     if (selectedSuggestion) {
       const vendor = stringFromRationale(selectedSuggestion.rationale_json.vendor_name, "Supplier");
+      const productTitle = productsById.get(selectedSuggestion.product_id)?.title;
+      const suggestionItemLabel = inventoryDisplayName({
+        productId: selectedSuggestion.product_id,
+        variantId: selectedSuggestion.variant_id,
+        productTitle,
+        rationale: selectedSuggestion.rationale_json
+      });
       setDraftForm({
         vendor_name: vendor,
         recipient_email: "",
-        subject: `Reorder request - ${selectedSuggestion.variant_id ?? selectedSuggestion.product_id}`,
+        subject: `Reorder request - ${suggestionItemLabel}`,
         body: `Hello ${vendor} team,\n\nPlease prepare a reorder for ${selectedSuggestion.recommended_quantity} units. We are reviewing the current stock velocity and will handle final send manually after approval.\n`,
         status: "draft"
       });
     }
-  }, [selectedSuggestion]);
+  }, [productsById, selectedSuggestion]);
 
   const saveDraft = useSaveSupplierDraft(storeId, selectedSuggestion?.id ?? null);
 
@@ -142,7 +224,7 @@ export function InventoryPage() {
           message="Sync more product inventory to generate low-stock alerts and reorder guidance."
         />
       ) : (
-        <div className="grid gap-6 xl:grid-cols-[1.14fr_0.86fr]">
+        <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_minmax(22rem,26rem)]">
           <div className="space-y-6">
             <SectionCard title="Critical inventory alerts">
               {alertsQuery.isLoading ? (
@@ -152,69 +234,105 @@ export function InventoryPage() {
               ) : alerts.length === 0 ? (
                 <EmptyState title="No inventory alerts" message="Inventory alerts will appear here once stock drops below configured thresholds." />
               ) : (
-                <div className="overflow-hidden rounded-2xl border border-slate-200">
-                  <div className="grid grid-cols-[1.2fr_0.8fr_0.6fr_0.7fr] bg-slate-50 px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500">
-                    <div>Product / variant</div>
-                    <div>Alert</div>
-                    <div>Current</div>
-                    <div>Status</div>
-                  </div>
-                  <div className="divide-y divide-slate-200">
-                    {alerts.map((alert) => (
-                      <div key={alert.id} className="grid grid-cols-[1.2fr_0.8fr_0.6fr_0.7fr] gap-3 px-4 py-4 text-sm text-slate-700">
-                        <div className="space-y-1">
-                          <p className="font-medium text-slate-950">{alert.product_id}</p>
-                          <p className="text-xs text-slate-500">{alert.variant_id}</p>
+                <div className="space-y-3">
+                  {alerts.map((alert) => {
+                    const meta = inventoryDisplayMeta({
+                      productId: alert.product_id,
+                      variantId: alert.variant_id,
+                      productTitle: productsById.get(alert.product_id)?.title
+                    });
+
+                    return (
+                      <div key={alert.id} className="rounded-2xl border border-slate-200 bg-slate-50/80 px-4 py-4">
+                        <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+                          <div className="min-w-0 space-y-2">
+                            <div className="space-y-1">
+                              <p className="font-medium text-slate-950">
+                                {inventoryDisplayName({
+                                  productId: alert.product_id,
+                                  variantId: alert.variant_id,
+                                  productTitle: productsById.get(alert.product_id)?.title
+                                })}
+                              </p>
+                              {meta ? <p className="text-xs text-slate-500">{meta}</p> : null}
+                            </div>
+                            <div className="flex flex-wrap gap-2 text-xs font-medium text-slate-600">
+                              <span className="rounded-full bg-white px-3 py-1">Threshold {alert.threshold_value}</span>
+                              <span className="rounded-full bg-white px-3 py-1">Current {alert.current_quantity}</span>
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-3 lg:justify-end">
+                            <div className="text-right">
+                              <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">Stock now</p>
+                              <p className="mt-1 text-2xl font-semibold tracking-tight text-slate-950">{alert.current_quantity}</p>
+                            </div>
+                            <StatusPill value={alert.status} />
+                          </div>
                         </div>
-                        <div>Threshold {alert.threshold_value}</div>
-                        <div>{alert.current_quantity}</div>
-                        <div><StatusPill value={alert.status} /></div>
                       </div>
-                    ))}
-                  </div>
+                    );
+                  })}
                 </div>
               )}
             </SectionCard>
 
             <SectionCard title="Reorder suggestions">
               <div className="space-y-3">
-                {suggestions.map((suggestion) => (
-                  <button
-                    key={suggestion.id}
-                    className={`w-full rounded-2xl border p-4 text-left transition ${
-                      suggestion.id === selectedSuggestionId ? "border-accent-300 bg-accent-50" : "border-slate-200 bg-white hover:border-accent-200"
-                    }`}
-                    onClick={() => setSelectedSuggestionId(suggestion.id)}
-                  >
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="space-y-2">
-                        <div className="flex items-center gap-2">
-                          <span className="inline-flex h-9 w-9 items-center justify-center rounded-2xl bg-accent-50 text-accent-700">
+                {suggestions.map((suggestion) => {
+                  const meta = inventoryDisplayMeta({
+                    productId: suggestion.product_id,
+                    variantId: suggestion.variant_id,
+                    productTitle: productsById.get(suggestion.product_id)?.title,
+                    rationale: suggestion.rationale_json
+                  });
+
+                  return (
+                    <button
+                      key={suggestion.id}
+                      className={`w-full rounded-2xl border p-4 text-left transition ${
+                        suggestion.id === selectedSuggestionId ? "border-accent-300 bg-accent-50" : "border-slate-200 bg-white hover:border-accent-200 hover:bg-slate-50"
+                      }`}
+                      onClick={() => setSelectedSuggestionId(suggestion.id)}
+                    >
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="flex min-w-0 items-start gap-3">
+                          <span className="mt-0.5 inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-accent-50 text-accent-700">
                             <PackageSearch className="h-4 w-4" />
                           </span>
-                          <div>
-                            <p className="font-semibold text-slate-950">{suggestion.variant_id ?? suggestion.product_id}</p>
-                            <p className="text-xs text-slate-500">{suggestion.product_id}</p>
+                          <div className="min-w-0 space-y-2">
+                            <div className="space-y-1">
+                              <p className="font-semibold text-slate-950">
+                                {inventoryDisplayName({
+                                  productId: suggestion.product_id,
+                                  variantId: suggestion.variant_id,
+                                  productTitle: productsById.get(suggestion.product_id)?.title,
+                                  rationale: suggestion.rationale_json
+                                })}
+                              </p>
+                              {meta ? <p className="text-xs text-slate-500">{meta}</p> : null}
+                            </div>
+                            <div className="flex flex-wrap gap-2">
+                              <StatusPill value={suggestion.status} />
+                              <span className="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-semibold text-slate-600">
+                                Suggest {suggestion.recommended_quantity} units
+                              </span>
+                            </div>
+                            <p className="text-sm text-slate-600">
+                              Current stock {suggestion.current_quantity} / threshold {suggestion.threshold_value}
+                            </p>
                           </div>
                         </div>
-                        <div className="flex flex-wrap gap-2">
-                          <StatusPill value={suggestion.status} />
-                          <StatusPill value={`reorder_${suggestion.recommended_quantity}`} />
-                        </div>
-                        <p className="text-sm text-slate-600">
-                          Current {suggestion.current_quantity} - Threshold {suggestion.threshold_value}
-                        </p>
+                        <p className="shrink-0 text-xs text-slate-500">{formatDate(suggestion.created_at)}</p>
                       </div>
-                      <p className="text-xs text-slate-500">{formatDate(suggestion.created_at)}</p>
-                    </div>
-                  </button>
-                ))}
+                    </button>
+                  );
+                })}
               </div>
             </SectionCard>
           </div>
 
           {selectedSuggestion ? (
-            <div className="space-y-6">
+            <div className="space-y-6 xl:sticky xl:top-24 xl:self-start">
               <DetailPanel title="Reorder details" subtitle="Inspect rationale, cost, and supplier draft state before any external follow-up.">
                 <KeyValueGrid
                   items={[
@@ -231,9 +349,9 @@ export function InventoryPage() {
 
               <SectionCard title="AI suggestion rationale">
                 <div className="space-y-4">
-                  <Card className="border-blue-100 bg-blue-50 p-4">
-                    <p className="font-medium text-blue-900">Recommendation summary</p>
-                    <p className="mt-2 text-sm leading-7 text-blue-800">
+                  <Card className="border-slate-200 bg-slate-50 p-4">
+                    <p className="font-medium text-slate-950">Recommendation summary</p>
+                    <p className="mt-2 text-sm leading-7 text-slate-700">
                       {stringFromRationale(
                         selectedSuggestion.rationale_json.summary,
                         "Current stock velocity and supplier lead time suggest review is needed before stock falls below safe operational levels."
@@ -277,14 +395,14 @@ export function InventoryPage() {
                   />
 
                   <div className="flex flex-wrap gap-3">
-                    <Button onClick={() => saveDraft.mutate({ ...draftForm, status: "draft" })} disabled={saveDraft.isPending}>
+                    <Button onClick={() => saveDraft.mutate({ ...draftForm, status: "draft" })} disabled={saveDraft.isPending || !selectedSuggestion}>
                       <FilePenLine className="mr-2 h-4 w-4" />
                       Save Supplier Draft
                     </Button>
                     <Button
                       variant="secondary"
                       onClick={() => saveDraft.mutate({ ...draftForm, status: "ready_for_review" })}
-                      disabled={saveDraft.isPending}
+                      disabled={saveDraft.isPending || !selectedSuggestion}
                     >
                       <Truck className="mr-2 h-4 w-4" />
                       Mark Ready for Review
@@ -295,6 +413,7 @@ export function InventoryPage() {
                     </Button>
                     <Button
                       variant="ghost"
+                      className="text-slate-500 hover:text-slate-900"
                       onClick={() => {
                         setIgnoredIds((current) => [...current, selectedSuggestion.id]);
                         setSelectedSuggestionId("");
