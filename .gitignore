@@ -25,6 +25,8 @@ docs/*
 !docs/public/
 !docs/public/**
 Releases/
+.agent/
+design-system/
 CHANGELOG.md
 CommerceOps_AI_PRD.md
 CommerceOps_AI_Release_Plan.md
