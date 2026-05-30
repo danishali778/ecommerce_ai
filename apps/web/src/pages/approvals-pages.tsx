@@ -1,6 +1,6 @@
 import * as React from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
-import { AlertTriangle, CheckCircle2, Clock3, Filter, RefreshCw, Search, XCircle } from "lucide-react";
+import { AlertTriangle, CheckCircle2, Clock3, Filter, RefreshCw, Search, Sparkles, XCircle } from "lucide-react";
 
 import { approvalsApi } from "@frontend/api-client";
 import { Button, Card, Checkbox, Input, Textarea } from "@frontend/ui";
@@ -12,7 +12,6 @@ import {
   ErrorState,
   KeyValueGrid,
   LoadingSkeleton,
-  MetricCard,
   PageHeader,
   ReviewRequiredBanner,
   SectionCard,
@@ -29,12 +28,43 @@ function notesFromAction(action: string, selectionCount: number) {
   return `${action} ${selectionCount} approval items from the queue`;
 }
 
+function formatApprovalEntityLabel(approval: Awaited<ReturnType<typeof approvalsApi.list>>[number] | Awaited<ReturnType<typeof approvalsApi.get>>) {
+  return titleize(approval.entity_type.replaceAll("_", " "));
+}
+
 function matchesSearch(approval: Awaited<ReturnType<typeof approvalsApi.list>>[number], query: string) {
   if (!query) return true;
   const haystack = [approval.action_type, approval.entity_type, approval.entity_id, approval.reasoning, approval.review_notes ?? "", approval.status, approval.execution_status ?? ""]
     .join(" ")
     .toLowerCase();
   return haystack.includes(query.toLowerCase());
+}
+
+function ApprovalMetricStrip({
+  label,
+  value,
+  hint,
+  tone = "neutral"
+}: {
+  label: string;
+  value: string | number;
+  hint: string;
+  tone?: "neutral" | "warning" | "danger" | "success";
+}) {
+  const toneClasses = {
+    neutral: "border-slate-200 bg-white",
+    warning: "border-amber-200 bg-[linear-gradient(135deg,rgba(254,243,199,0.55),white)]",
+    danger: "border-rose-200 bg-[linear-gradient(135deg,rgba(255,228,230,0.55),white)]",
+    success: "border-emerald-200 bg-[linear-gradient(135deg,rgba(209,250,229,0.55),white)]"
+  };
+
+  return (
+    <div className={`rounded-[1.3rem] border px-4 py-4 ${toneClasses[tone]}`}>
+      <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-500">{label}</p>
+      <p className="mt-3 text-3xl font-semibold tracking-tight text-slate-950">{value}</p>
+      <p className="mt-2 text-sm leading-6 text-slate-600">{hint}</p>
+    </div>
+  );
 }
 
 function ApprovalQueueRow({
@@ -48,38 +78,46 @@ function ApprovalQueueRow({
 }) {
   return (
     <label
-      className={`grid cursor-pointer gap-4 rounded-2xl border p-4 transition lg:grid-cols-[auto_1.3fr_0.95fr_0.8fr_0.8fr] ${
-        selected ? "border-accent-300 bg-accent-50" : "border-slate-200 bg-white hover:border-accent-200"
+      className={`block cursor-pointer rounded-[1.35rem] border px-4 py-4 transition ${
+        selected ? "border-accent-300 bg-accent-50" : "border-slate-200 bg-white hover:border-accent-200 hover:bg-slate-50"
       }`}
     >
-      <div className="flex items-start gap-3">
-        <Checkbox checked={selected} onChange={onToggle} />
-        <div className="pt-0.5">
-          <div className="flex items-center gap-2">
-            <p className="font-semibold text-slate-950">{titleize(approval.action_type)}</p>
-            <StatusPill value={approval.status} />
+      <div className="grid gap-4 xl:grid-cols-[minmax(0,1.1fr)_0.82fr_auto]">
+        <div className="min-w-0 space-y-4">
+          <div className="flex items-start gap-3">
+            <Checkbox checked={selected} onChange={onToggle} />
+            <div className="min-w-0 pt-0.5">
+              <div className="flex flex-wrap items-center gap-2">
+                <p className="font-semibold text-slate-950">{titleize(approval.action_type)}</p>
+                <StatusPill value={approval.status} />
+              </div>
+              <p className="mt-2 text-sm text-slate-600">{formatApprovalEntityLabel(approval)}</p>
+            </div>
           </div>
-          <p className="mt-2 text-sm text-slate-600">{approval.entity_type.replaceAll("_", " ")} · {approval.entity_id}</p>
+          <div className="rounded-[1.1rem] border border-slate-200 bg-slate-50/80 px-4 py-3">
+            <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">Context / details</p>
+            <p className="mt-2 text-sm leading-6 text-slate-700">{approval.reasoning}</p>
+          </div>
         </div>
-      </div>
-      <div className="space-y-2">
-        <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Context / details</p>
-        <p className="text-sm leading-6 text-slate-700">{approval.reasoning}</p>
-      </div>
-      <div className="space-y-2">
-        <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Execution</p>
-        <StatusPill value={approval.execution_status ?? "not_started"} />
-        {approval.execution_error ? <p className="text-xs text-rose-700">{approval.execution_error}</p> : null}
-      </div>
-      <div className="space-y-2">
-        <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Created</p>
-        <p className="text-sm text-slate-700">{formatDate(approval.created_at)}</p>
-        <p className="text-xs text-slate-500">Expires {formatDate(approval.expires_at)}</p>
-      </div>
-      <div className="flex items-start justify-between gap-3 lg:justify-end">
-        <div className="space-y-2 lg:text-right">
-          <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Open detail</p>
-          <Link className="text-sm font-medium text-accent-600 hover:text-accent-700" to={`/app/approvals/${approval.id}`}>
+
+        <div className="grid gap-3 text-sm text-slate-600 sm:grid-cols-2 xl:grid-cols-1">
+          <div>
+            <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">Execution</p>
+            <div className="mt-2">
+              <StatusPill value={approval.execution_status ?? "not_started"} />
+            </div>
+            {approval.execution_error ? <p className="mt-2 text-xs leading-5 text-rose-700">{approval.execution_error}</p> : null}
+          </div>
+          <div>
+            <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">Created</p>
+            <p className="mt-2 text-sm text-slate-700">{formatDate(approval.created_at)}</p>
+            <p className="mt-1 text-xs text-slate-500">Expires {formatDate(approval.expires_at)}</p>
+          </div>
+        </div>
+
+        <div className="flex flex-col items-start gap-2 text-sm xl:items-end xl:text-right">
+          <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">Open detail</p>
+          <Link className="font-medium text-accent-600 hover:text-accent-700" to={`/app/approvals/${approval.id}`}>
             Inspect approval
           </Link>
         </div>
@@ -127,7 +165,7 @@ export function ApprovalsPage() {
           <>
             <div className="relative w-full max-w-sm">
               <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-              <Input className="pl-9" placeholder="Search queue, entity IDs, and notes" value={search} onChange={(event) => setSearch(event.target.value)} />
+              <Input className="pl-9" placeholder="Search queue, approval context, and notes" value={search} onChange={(event) => setSearch(event.target.value)} />
             </div>
             <Button variant="secondary">
               <Filter className="mr-2 h-4 w-4" />
@@ -137,108 +175,171 @@ export function ApprovalsPage() {
         }
       />
 
-      <div className="dashboard-grid">
-        <MetricCard label="Pending Approvals" value={pendingCount} hint="Items waiting on reviewer action" tone={pendingCount ? "warning" : "success"} />
-        <MetricCard label="Avg Approval Time" value={`${avgQueueMinutes}m`} hint="Average queue age in the current result set" />
-        <MetricCard label="Awaiting Execution" value={awaitingExecutionCount} hint="Approved items pending backend execution" tone={awaitingExecutionCount ? "warning" : "success"} />
-        <MetricCard label="Escalated / Failed" value={escalatedCount} hint="Needs manager attention or retry" tone={escalatedCount ? "danger" : "success"} />
-      </div>
+      <div className="grid gap-6 xl:grid-cols-[minmax(0,1.08fr)_minmax(21rem,0.92fr)]">
+        <SectionCard title="Reviewer workspace">
+          <div className="space-y-4">
+            <div className="rounded-[1.35rem] border border-slate-200 bg-[linear-gradient(135deg,rgba(248,250,252,0.98),rgba(239,246,255,0.82))] px-5 py-4">
+              <p className="text-sm font-semibold text-slate-950">Human review controls the final intent</p>
+              <p className="mt-2 text-sm leading-6 text-slate-600">
+                Review AI-assisted actions with reasoning, audit notes, and execution context before anything moves downstream.
+              </p>
+            </div>
 
-      {!approvals.length ? (
-        <EmptyState title="No approvals found" message="There are no approval items that match the current filter." />
-      ) : (
+            {!approvals.length ? (
+              <EmptyState title="No approvals found" message="There are no approval items that match the current filter." />
+            ) : (
+              <div className="space-y-3">
+                {approvals.map((approval) => (
+                  <ApprovalQueueRow
+                    key={approval.id}
+                    approval={approval}
+                    selected={selectedIds.includes(approval.id)}
+                    onToggle={() =>
+                      setSelectedIds((current) =>
+                        current.includes(approval.id) ? current.filter((id) => id !== approval.id) : [...current, approval.id]
+                      )
+                    }
+                  />
+                ))}
+              </div>
+            )}
+          </div>
+        </SectionCard>
+
         <div className="space-y-6">
-          <SectionCard
-            title="Reviewer workspace"
-            actions={
+          <div className="surface-panel p-5">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-500">Queue signals</p>
+                <p className="mt-2 text-sm leading-6 text-slate-600">
+                  Monitor review load, execution lag, and failures that still need human handling.
+                </p>
+              </div>
               <Button variant="secondary" onClick={() => approvalsQuery.refetch()}>
                 <RefreshCw className="mr-2 h-4 w-4" />
                 Refresh queue
               </Button>
-            }
-          >
-            <div className="space-y-3">
-              {approvals.map((approval) => (
-                <ApprovalQueueRow
-                  key={approval.id}
-                  approval={approval}
-                  selected={selectedIds.includes(approval.id)}
-                  onToggle={() =>
-                    setSelectedIds((current) =>
-                      current.includes(approval.id) ? current.filter((id) => id !== approval.id) : [...current, approval.id]
-                    )
-                  }
-                />
-              ))}
             </div>
-          </SectionCard>
+
+            <div className="mt-5 space-y-3">
+              <ApprovalMetricStrip
+                label="Pending approvals"
+                value={pendingCount}
+                hint="Items waiting on reviewer action"
+                tone={pendingCount ? "warning" : "success"}
+              />
+              <ApprovalMetricStrip
+                label="Avg approval time"
+                value={`${avgQueueMinutes}m`}
+                hint="Average queue age in the current result set"
+              />
+              <ApprovalMetricStrip
+                label="Awaiting execution"
+                value={awaitingExecutionCount}
+                hint="Approved items pending backend execution"
+                tone={awaitingExecutionCount ? "warning" : "success"}
+              />
+              <ApprovalMetricStrip
+                label="Escalated / failed"
+                value={escalatedCount}
+                hint="Needs manager attention or retry"
+                tone={escalatedCount ? "danger" : "success"}
+              />
+            </div>
+          </div>
 
           {selectedApprovals.length ? (
-            <Card className="sticky bottom-6 z-20 border-slate-950 bg-slate-950 p-4 text-white shadow-2xl">
-              <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
-                <div className="space-y-3">
-                  <div className="flex items-center gap-3">
-                    <StatusPill value={`${selectedApprovals.length} selected`} />
-                    <p className="text-sm text-slate-300">Review actions apply only to the selected approval items.</p>
+            <Card className="sticky bottom-6 z-20 overflow-hidden border border-slate-200 bg-white/95 shadow-[0_22px_60px_rgba(15,23,42,0.16)] backdrop-blur">
+              <div className="border-b border-slate-200 bg-[linear-gradient(135deg,rgba(239,246,255,0.95),rgba(255,255,255,0.98))] px-5 py-4">
+                <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+                  <div className="space-y-2">
+                    <div className="flex flex-wrap items-center gap-3">
+                      <StatusPill value={`${selectedApprovals.length} selected`} />
+                      <div className="inline-flex items-center gap-2 rounded-full bg-accent-50 px-3 py-1 text-xs font-semibold text-accent-700">
+                        <Sparkles className="h-3.5 w-3.5" />
+                        Reviewer actions
+                      </div>
+                    </div>
+                    <p className="text-sm text-slate-600">Review actions apply only to the selected approval items. Add notes if you want them preserved in the audit trail.</p>
                   </div>
+                  <div className="max-w-xl text-sm text-slate-500">
+                    {selectedApprovals.map((approval) => `${titleize(approval.action_type)} / ${formatApprovalEntityLabel(approval)}`).slice(0, 2).join(" / ")}
+                    {selectedApprovals.length > 2 ? ` +${selectedApprovals.length - 2} more` : ""}
+                  </div>
+                </div>
+              </div>
+
+              <div className="grid gap-5 px-5 py-5 xl:grid-cols-[minmax(0,1.1fr)_auto] xl:items-end">
+                <div className="space-y-2">
+                  <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">Reviewer notes</p>
                   <Textarea
-                    className="min-h-24 border-slate-700 bg-slate-900 text-slate-100 placeholder:text-slate-500 focus:border-accent-400 focus:ring-accent-500/20"
+                    className="min-h-28 border-slate-300 bg-white text-slate-900 placeholder:text-slate-400 focus:border-accent-400 focus:ring-accent-100"
                     placeholder="Optional reviewer notes for the selected items"
                     value={batchNotes}
                     onChange={(event) => setBatchNotes(event.target.value)}
                   />
                 </div>
-                <div className="flex flex-wrap gap-3">
-                  <Button variant="secondary" className="border-slate-700 bg-slate-900 text-white hover:bg-slate-800" onClick={() => setSelectedIds([])}>
-                    Clear selection
-                  </Button>
-                  <Button
-                    variant="secondary"
-                    className="border-slate-700 bg-slate-900 text-white hover:bg-slate-800"
-                    onClick={() =>
-                      actionMutation.mutate({
-                        action: "cancel",
-                        approvalIds: selectedIds,
-                        notes: batchNotes || notesFromAction("cancel", selectedIds.length)
-                      })
-                    }
-                    disabled={actionMutation.isPending}
-                  >
-                    Escalate selected
-                  </Button>
-                  <Button
-                    variant="danger"
-                    onClick={() =>
-                      actionMutation.mutate({
-                        action: "reject",
-                        approvalIds: selectedIds,
-                        notes: batchNotes || notesFromAction("reject", selectedIds.length)
-                      })
-                    }
-                    disabled={actionMutation.isPending}
-                  >
-                    <XCircle className="mr-2 h-4 w-4" />
-                    Reject selected
-                  </Button>
-                  <Button
-                    onClick={() =>
-                      actionMutation.mutate({
-                        action: "approve",
-                        approvalIds: selectedIds,
-                        notes: batchNotes || notesFromAction("approve", selectedIds.length)
-                      })
-                    }
-                    disabled={actionMutation.isPending}
-                  >
-                    <CheckCircle2 className="mr-2 h-4 w-4" />
-                    Approve selected
-                  </Button>
+
+                <div className="space-y-2 xl:min-w-[22rem]">
+                  <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">Actions</p>
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <Button
+                      variant="secondary"
+                      className="h-11 border-slate-300 bg-white text-slate-700 hover:bg-slate-50"
+                      onClick={() => setSelectedIds([])}
+                    >
+                      Clear selection
+                    </Button>
+                    <Button
+                      variant="secondary"
+                      className="h-11 border-amber-200 bg-amber-50 text-amber-800 hover:bg-amber-100"
+                      onClick={() =>
+                        actionMutation.mutate({
+                          action: "cancel",
+                          approvalIds: selectedIds,
+                          notes: batchNotes || notesFromAction("cancel", selectedIds.length)
+                        })
+                      }
+                      disabled={actionMutation.isPending}
+                    >
+                      Escalate selected
+                    </Button>
+                    <Button
+                      variant="danger"
+                      className="h-11"
+                      onClick={() =>
+                        actionMutation.mutate({
+                          action: "reject",
+                          approvalIds: selectedIds,
+                          notes: batchNotes || notesFromAction("reject", selectedIds.length)
+                        })
+                      }
+                      disabled={actionMutation.isPending}
+                    >
+                      <XCircle className="mr-2 h-4 w-4" />
+                      Reject selected
+                    </Button>
+                    <Button
+                      className="h-11"
+                      onClick={() =>
+                        actionMutation.mutate({
+                          action: "approve",
+                          approvalIds: selectedIds,
+                          notes: batchNotes || notesFromAction("approve", selectedIds.length)
+                        })
+                      }
+                      disabled={actionMutation.isPending}
+                    >
+                      <CheckCircle2 className="mr-2 h-4 w-4" />
+                      Approve selected
+                    </Button>
+                  </div>
                 </div>
               </div>
             </Card>
           ) : null}
         </div>
-      )}
+      </div>
 
       {actionMutation.isError ? <ReviewRequiredBanner message={messageFromError(actionMutation.error)} /> : null}
     </div>
@@ -304,23 +405,41 @@ export function ApprovalDetailPage() {
         }
       />
 
-      <div className="split-panel">
+      <div className="grid gap-6 xl:grid-cols-[minmax(0,1.05fr)_minmax(22rem,0.95fr)]">
         <div className="space-y-6">
           <SectionCard title="Approval context">
-            <KeyValueGrid
-              items={[
-                { label: "Entity type", value: titleize(approval.entity_type) },
-                { label: "Entity ID", value: approval.entity_id },
-                { label: "Approval status", value: <StatusPill value={approval.status} /> },
-                { label: "Execution status", value: <StatusPill value={approval.execution_status ?? "not_started"} /> },
-                { label: "Created", value: formatDate(approval.created_at) },
-                { label: "Expires", value: formatDate(approval.expires_at) }
-              ]}
-            />
-            <Card className="mt-5 p-4">
-              <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Reasoning</p>
-              <p className="mt-3 text-sm leading-7 text-slate-700">{approval.reasoning}</p>
-            </Card>
+            <div className="space-y-5">
+              <div className="rounded-[1.35rem] border border-slate-200 bg-[linear-gradient(135deg,rgba(248,250,252,0.98),rgba(239,246,255,0.82))] px-5 py-4">
+                <div className="flex flex-wrap items-start justify-between gap-4">
+                  <div className="space-y-3">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <StatusPill value={approval.status} />
+                      <StatusPill value={approval.execution_status ?? "not_started"} />
+                    </div>
+                    <div>
+                      <p className="text-sm font-semibold text-slate-950">{formatApprovalEntityLabel(approval)}</p>
+                      <p className="mt-1 text-sm leading-6 text-slate-600">Created {formatDate(approval.created_at)} and expires {formatDate(approval.expires_at)}.</p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <KeyValueGrid
+                items={[
+                  { label: "Entity", value: formatApprovalEntityLabel(approval) },
+                  { label: "Approval status", value: <StatusPill value={approval.status} /> },
+                  { label: "Execution status", value: <StatusPill value={approval.execution_status ?? "not_started"} /> },
+                  { label: "Created", value: formatDate(approval.created_at) },
+                  { label: "Expires", value: formatDate(approval.expires_at) }
+                ]}
+              />
+
+              <Card className="p-4">
+                <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Reasoning</p>
+                <p className="mt-3 text-sm leading-7 text-slate-700">{approval.reasoning}</p>
+              </Card>
+            </div>
+
             {approval.review_notes ? (
               <Card className="mt-4 p-4">
                 <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Existing review notes</p>
@@ -330,7 +449,7 @@ export function ApprovalDetailPage() {
           </SectionCard>
         </div>
 
-        <div className="space-y-6">
+        <div className="space-y-6 xl:sticky xl:top-24 xl:self-start">
           <DetailPanel title="Decision controls" subtitle="Use the supported backend actions only; execution stays separate from review.">
             <ApprovalDetailActions
               approvalId={approval.id}
@@ -342,9 +461,13 @@ export function ApprovalDetailPage() {
 
           <SectionCard title="Execution and follow-up">
             <div className="space-y-4 text-sm text-slate-700">
-              <div className="flex items-center gap-2">
-                <Clock3 className="h-4 w-4 text-slate-400" />
-                <p>Execution status: <span className="font-medium text-slate-900">{titleize(approval.execution_status ?? "not_started")}</span></p>
+              <div className="rounded-[1.25rem] border border-slate-200 bg-slate-50 px-4 py-4">
+                <div className="flex items-center gap-2">
+                  <Clock3 className="h-4 w-4 text-slate-400" />
+                  <p>
+                    Execution status: <span className="font-medium text-slate-900">{titleize(approval.execution_status ?? "not_started")}</span>
+                  </p>
+                </div>
               </div>
               {approval.execution_error ? (
                 <Card className="border-rose-200 bg-rose-50 p-4 text-rose-800">
