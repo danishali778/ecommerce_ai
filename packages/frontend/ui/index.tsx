@@ -14,16 +14,19 @@ export const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(function 
   ref
 ) {
   const variants: Record<NonNullable<ButtonProps["variant"]>, string> = {
-    primary: "bg-accent-500 text-white hover:bg-accent-600",
-    secondary: "border border-slate-300 bg-white text-slate-900 hover:bg-slate-50",
-    ghost: "bg-transparent text-slate-700 hover:bg-slate-100",
-    danger: "bg-rose-600 text-white hover:bg-rose-700"
+    primary:
+      "border border-accent-600 bg-accent-600 text-white shadow-[0_10px_24px_rgba(37,99,235,0.18)] hover:bg-accent-700 hover:shadow-[0_14px_28px_rgba(37,99,235,0.22)] active:translate-y-0",
+    secondary:
+      "border border-slate-200 bg-white text-slate-800 shadow-[0_6px_18px_rgba(15,23,42,0.05)] hover:border-slate-300 hover:bg-slate-50 active:translate-y-0",
+    ghost: "bg-transparent text-slate-600 hover:bg-slate-100/80 hover:text-slate-900",
+    danger:
+      "border border-rose-600 bg-rose-600 text-white shadow-[0_10px_24px_rgba(190,24,93,0.16)] hover:bg-rose-700 hover:shadow-[0_14px_28px_rgba(190,24,93,0.20)] active:translate-y-0"
   };
   return (
     <button
       ref={ref}
       className={cn(
-        "inline-flex items-center justify-center rounded-xl px-4 py-2 text-sm font-medium transition disabled:cursor-not-allowed disabled:opacity-50",
+        "inline-flex items-center justify-center rounded-xl px-4 py-2.5 text-sm font-semibold transition duration-200 disabled:cursor-not-allowed disabled:opacity-50",
         variants[variant],
         className
       )}
@@ -33,7 +36,13 @@ export const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(function 
 });
 
 export const Card = ({ className, ...props }: React.HTMLAttributes<HTMLDivElement>) => (
-  <div className={cn("rounded-2xl border border-slate-200 bg-white shadow-sm", className)} {...props} />
+  <div
+    className={cn(
+      "rounded-[1.5rem] border border-slate-200 bg-white shadow-[0_14px_36px_rgba(15,23,42,0.05)] backdrop-blur",
+      className
+    )}
+    {...props}
+  />
 );
 
 export const Input = React.forwardRef<HTMLInputElement, React.InputHTMLAttributes<HTMLInputElement>>(
@@ -42,7 +51,7 @@ export const Input = React.forwardRef<HTMLInputElement, React.InputHTMLAttribute
       <input
         ref={ref}
         className={cn(
-          "w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-accent-500 focus:ring-2 focus:ring-accent-100",
+          "w-full rounded-xl border border-slate-200 bg-white/88 px-3.5 py-2.5 text-sm text-slate-900 shadow-[inset_0_1px_0_rgba(255,255,255,0.85)] outline-none transition duration-200 placeholder:text-slate-400 focus:border-accent-400 focus:bg-white focus:ring-4 focus:ring-accent-100",
           className
         )}
         {...props}
@@ -73,7 +82,7 @@ export const Textarea = React.forwardRef<HTMLTextAreaElement, React.TextareaHTML
       <textarea
         ref={ref}
         className={cn(
-          "min-h-28 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-accent-500 focus:ring-2 focus:ring-accent-100",
+          "min-h-28 w-full rounded-xl border border-slate-200 bg-white/88 px-3.5 py-3 text-sm text-slate-900 shadow-[inset_0_1px_0_rgba(255,255,255,0.85)] outline-none transition duration-200 placeholder:text-slate-400 focus:border-accent-400 focus:bg-white focus:ring-4 focus:ring-accent-100",
           className
         )}
         {...props}
@@ -88,7 +97,7 @@ export const Select = React.forwardRef<HTMLSelectElement, React.SelectHTMLAttrib
       <select
         ref={ref}
         className={cn(
-          "w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 outline-none transition focus:border-accent-500 focus:ring-2 focus:ring-accent-100",
+          "w-full rounded-xl border border-slate-200 bg-white/88 px-3.5 py-2.5 text-sm text-slate-900 shadow-[inset_0_1px_0_rgba(255,255,255,0.85)] outline-none transition duration-200 focus:border-accent-400 focus:bg-white focus:ring-4 focus:ring-accent-100",
           className
         )}
         {...props}
@@ -109,13 +118,13 @@ export function Badge({
   tone = "neutral"
 }: React.PropsWithChildren<{ className?: string; tone?: "neutral" | "info" | "success" | "warning" | "danger" }>) {
   const tones = {
-    neutral: "bg-slate-100 text-slate-700",
-    info: "bg-blue-50 text-blue-700",
-    success: "bg-emerald-50 text-emerald-700",
-    warning: "bg-amber-50 text-amber-700",
-    danger: "bg-rose-50 text-rose-700"
+    neutral: "border border-slate-200 bg-white/88 text-slate-600",
+    info: "border border-sky-200 bg-sky-50 text-sky-700",
+    success: "border border-emerald-200 bg-emerald-50 text-emerald-700",
+    warning: "border border-amber-200 bg-amber-50 text-amber-700",
+    danger: "border border-rose-200 bg-rose-50 text-rose-700"
   };
-  return <span className={cn("inline-flex rounded-full px-2.5 py-1 text-xs font-medium", tones[tone], className)}>{children}</span>;
+  return <span className={cn("inline-flex rounded-full px-2.5 py-1 text-xs font-semibold", tones[tone], className)}>{children}</span>;
 }
 
 export function Tabs({ className, ...props }: React.HTMLAttributes<HTMLDivElement>) {
@@ -130,8 +139,10 @@ export function TabButton({
   return (
     <button
       className={cn(
-        "rounded-full px-3 py-1.5 text-sm transition",
-        active ? "bg-accent-500 text-white" : "bg-slate-100 text-slate-700 hover:bg-slate-200",
+        "rounded-full px-3 py-1.5 text-sm font-semibold transition duration-200",
+        active
+          ? "bg-[linear-gradient(135deg,#2563eb,#1d4ed8)] text-white shadow-[0_10px_24px_rgba(37,99,235,0.22)]"
+          : "border border-slate-200 bg-white/92 text-slate-600 hover:border-slate-300 hover:bg-white hover:text-slate-900",
         className
       )}
       {...props}

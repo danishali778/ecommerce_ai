@@ -48,8 +48,13 @@ export function StoreSwitcher() {
   };
 
   return (
-    <div className="min-w-56">
-      <Select value={selectedStoreId ?? stores[0].id} onChange={onChange}>
+    <div className="min-w-0 flex-1 sm:min-w-[14rem] xl:w-[17rem] xl:flex-none">
+      <div className="mb-1.5 px-1 text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-500">Active store</div>
+      <Select
+        value={selectedStoreId ?? stores[0].id}
+        onChange={onChange}
+        className="h-11 rounded-xl border-slate-200 bg-white px-3.5 shadow-none focus:border-accent-300 focus:ring-4 focus:ring-accent-100"
+      >
         {stores.map((store) => (
           <option key={store.id} value={store.id}>
             {store.name}
