@@ -39,14 +39,70 @@ function messageFromError(error: unknown) {
 }
 
 function customerLabel(customer?: Awaited<ReturnType<typeof catalogApi.getCustomer>>) {
-  if (!customer) return "Unlinked";
+  if (!customer) return "Unlinked customer";
   const fullName = `${customer.first_name ?? ""} ${customer.last_name ?? ""}`.trim();
-  return fullName || customer.email || customer.id;
+  return fullName || customer.email || "Customer record";
+}
+
+function formatCurrencyAmount(value?: number | string | null, currency?: string | null) {
+  if (value === null || value === undefined || value === "") return null;
+
+  const numericValue = typeof value === "number" ? value : Number(value);
+  if (Number.isNaN(numericValue)) return null;
+
+  if (currency) {
+    try {
+      return new Intl.NumberFormat(undefined, {
+        style: "currency",
+        currency,
+        maximumFractionDigits: 2
+      }).format(numericValue);
+    } catch {
+      return `${numericValue.toFixed(2)} ${currency}`;
+    }
+  }
+
+  return numericValue.toFixed(2);
 }
 
 function orderLabel(order?: Awaited<ReturnType<typeof catalogApi.getOrder>>) {
-  if (!order) return "Unlinked";
-  return `${order.external_order_id} - ${order.total} ${order.currency ?? ""}`.trim();
+  if (!order) return "Unlinked order";
+  const amount = formatCurrencyAmount(order.total, order.currency);
+  const reference = order.external_order_id ?? "";
+
+  if (reference.startsWith("gid://shopify/Order/") || /^\d+$/.test(reference)) {
+    return amount ? `Linked Shopify order · ${amount}` : "Linked Shopify order";
+  }
+
+  if (reference) {
+    return amount ? `${reference} · ${amount}` : reference;
+  }
+
+  return amount ? `Linked order · ${amount}` : "Linked order";
+}
+
+function conversationLabel(conversation: Awaited<ReturnType<typeof supportApi.listConversations>>[number] | Awaited<ReturnType<typeof supportApi.getConversation>>) {
+  if (conversation.external_ticket_id) {
+    const normalized = conversation.external_ticket_id
+      .replace(/^ticket[-_]?/i, "")
+      .replace(/[-_]+/g, " ")
+      .trim();
+
+    if (!normalized) return "Support ticket";
+
+    const titled = titleize(normalized);
+    if (titled.toLowerCase().startsWith("support ")) {
+      return `Support Ticket ${titled.slice("support ".length)}`.trim();
+    }
+
+    return `Ticket ${titled}`;
+  }
+
+  return `${titleize(conversation.channel)} conversation`;
+}
+
+function assignedLabel(assignedUserId?: string | null) {
+  return assignedUserId ? "Assigned teammate" : "Unassigned";
 }
 
 function countByStatus(conversations: Awaited<ReturnType<typeof supportApi.listConversations>>) {
@@ -81,6 +137,22 @@ function DraftActionBanner({
   return null;
 }
 
+function SupportMetaList({ items }: { items: Array<{ label: string; value: React.ReactNode }> }) {
+  return (
+    <div className="overflow-hidden rounded-[1.3rem] border border-slate-200 bg-slate-50/80">
+      {items.map((item, index) => (
+        <div
+          key={item.label}
+          className={`flex items-start justify-between gap-4 px-4 py-3 ${index ? "border-t border-slate-200" : ""}`}
+        >
+          <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">{item.label}</p>
+          <div className="max-w-[16rem] text-right text-sm text-slate-800">{item.value}</div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 export function SupportPage() {
   const { storeId = "" } = useParams();
   const navigate = useNavigate();
@@ -108,6 +180,8 @@ export function SupportPage() {
 
   const conversations = conversationsQuery.data ?? [];
   const metrics = countByStatus(conversations);
+  const customersById = useMemo(() => new Map((customersQuery.data ?? []).map((customer) => [customer.id, customer])), [customersQuery.data]);
+  const ordersById = useMemo(() => new Map((ordersQuery.data ?? []).map((order) => [order.id, order])), [ordersQuery.data]);
   const filteredConversations = conversations.filter((conversation) => {
     if (!search) return true;
     const haystack = [
@@ -141,7 +215,7 @@ export function SupportPage() {
         <MetricCard label="Resolved" value={metrics.resolved} hint="Closed conversations in the current result set" tone="success" />
       </div>
 
-      <div className="grid gap-6 xl:grid-cols-[1.35fr_0.85fr]">
+      <div className="grid gap-6 xl:grid-cols-[minmax(0,1.18fr)_minmax(21rem,0.82fr)]">
         <SectionCard
           title="Conversation queue"
           actions={
@@ -169,118 +243,178 @@ export function SupportPage() {
               message="Create a support conversation for a synced customer and order to start the review flow."
             />
           ) : (
-            <div className="space-y-3">
-              {filteredConversations.map((conversation) => (
-                <Link
-                  key={conversation.id}
-                  to={`/app/support/${storeId}/conversations/${conversation.id}`}
-                  className="block rounded-2xl border border-slate-200 bg-white p-4 transition hover:border-accent-300 hover:bg-accent-50"
-                >
-                  <div className="flex flex-wrap items-start justify-between gap-4">
-                    <div className="space-y-3">
-                      <div className="flex items-center gap-2">
-                        <span className="inline-flex h-9 w-9 items-center justify-center rounded-2xl bg-accent-50 text-accent-700">
-                          <Ticket className="h-4 w-4" />
-                        </span>
-                        <div>
-                          <p className="font-semibold text-slate-950">{conversation.external_ticket_id ?? conversation.id}</p>
-                          <p className="text-xs text-slate-500">{titleize(conversation.channel)}</p>
-                        </div>
-                      </div>
-                      <div className="flex flex-wrap items-center gap-2">
-                        <StatusPill value={conversation.status} />
-                        <StatusPill value={conversation.assigned_user_id ? "assigned" : "unassigned"} />
-                      </div>
-                      <p className="text-sm text-slate-600">
-                        Customer {conversation.customer_id ?? "unlinked"} - Order {conversation.order_id ?? "unlinked"}
-                      </p>
+            <div className="space-y-4">
+              <div className="rounded-[1.4rem] border border-slate-200 bg-[linear-gradient(135deg,rgba(248,250,252,0.98),rgba(239,246,255,0.82))] px-5 py-4">
+                <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+                  <div className="max-w-2xl">
+                    <p className="text-sm font-semibold text-slate-950">Review-first support operations</p>
+                    <p className="mt-1 text-sm leading-6 text-slate-600">
+                      Keep every case grounded in customer, order, and policy context before a human approves the reply and sends it from the external support channel.
+                    </p>
+                  </div>
+                  <div className="flex flex-wrap gap-5 text-sm">
+                    <div>
+                      <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">In queue</p>
+                      <p className="mt-1 text-2xl font-semibold tracking-tight text-slate-950">{filteredConversations.length}</p>
                     </div>
-                    <div className="space-y-2 text-right">
-                      <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Last updated</p>
-                      <p className="text-sm text-slate-700">{formatDate(conversation.updated_at)}</p>
-                      <p className="text-xs font-medium text-accent-600">Open workspace</p>
+                    <div>
+                      <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">Pending review</p>
+                      <p className="mt-1 text-2xl font-semibold tracking-tight text-slate-950">{metrics.pendingReview}</p>
                     </div>
                   </div>
-                </Link>
-              ))}
+                </div>
+              </div>
+
+              <div className="space-y-3">
+                {filteredConversations.map((conversation) => (
+                  <Link
+                    key={conversation.id}
+                    to={`/app/support/${storeId}/conversations/${conversation.id}`}
+                    className="block rounded-[1.4rem] border border-slate-200 bg-white px-5 py-4 transition hover:-translate-y-[1px] hover:border-accent-300 hover:bg-slate-50"
+                  >
+                    <div className="grid gap-4 xl:grid-cols-[minmax(0,1.15fr)_0.82fr_auto]">
+                      <div className="min-w-0 space-y-4">
+                        <div className="flex items-start gap-3">
+                          <span className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-slate-200 bg-slate-50 text-accent-700">
+                            <Ticket className="h-4 w-4" />
+                          </span>
+                          <div className="min-w-0 space-y-1">
+                            <p className="truncate text-base font-semibold text-slate-950">
+                              {customerLabel(conversation.customer_id ? customersById.get(conversation.customer_id) : undefined)}
+                            </p>
+                            <p className="text-sm text-slate-600">{conversationLabel(conversation)}</p>
+                          </div>
+                        </div>
+                        <div className="flex flex-wrap items-center gap-2">
+                          <StatusPill value={conversation.status} />
+                          <StatusPill value={assignedLabel(conversation.assigned_user_id)} />
+                          <StatusPill value={titleize(conversation.channel)} />
+                        </div>
+                      </div>
+
+                      <div className="grid gap-3 text-sm text-slate-600 sm:grid-cols-2 xl:grid-cols-1">
+                        <div>
+                          <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">Order</p>
+                          <p className="mt-1 leading-6">{orderLabel(conversation.order_id ? ordersById.get(conversation.order_id) : undefined)}</p>
+                        </div>
+                        <div>
+                          <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">Case</p>
+                          <p className="mt-1 leading-6">{conversationLabel(conversation)}</p>
+                        </div>
+                      </div>
+
+                      <div className="flex flex-col items-start gap-2 text-sm xl:items-end xl:text-right">
+                        <div>
+                          <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">Last updated</p>
+                          <p className="mt-1 text-slate-700">{formatDate(conversation.updated_at)}</p>
+                        </div>
+                        <div className="inline-flex items-center gap-2 text-sm font-medium text-accent-600">
+                          Open workspace
+                          <span aria-hidden="true">→</span>
+                        </div>
+                      </div>
+                    </div>
+                  </Link>
+                ))}
+              </div>
             </div>
           )}
         </SectionCard>
 
-        <SectionCard title="Quick intake">
-          <div className="space-y-4">
-            <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-600">
-              Create a new conversation only when a case does not already exist in the queue. The primary workflow remains review-first: intake, draft, operator approval, manual send.
-            </div>
+        <div className="space-y-6 xl:sticky xl:top-24 xl:self-start">
+          <SectionCard title="Quick intake">
+            <div className="space-y-5">
+              <div className="rounded-[1.35rem] border border-slate-200 bg-slate-50/80 px-4 py-4">
+                <p className="text-sm font-semibold text-slate-950">Open a new case only when the queue does not already cover it.</p>
+                <p className="mt-2 text-sm leading-6 text-slate-600">
+                  CommerceOps keeps support review-first: intake, grounded draft generation, operator approval, and manual send outside the platform.
+                </p>
+              </div>
 
-            <label className="space-y-2 text-sm font-medium text-slate-700">
-              Customer
-              <Select
-                value={form.customer_id}
-                onChange={(event) => setForm((current) => ({ ...current, customer_id: event.target.value }))}
+              <label className="space-y-2 text-sm font-medium text-slate-700">
+                Customer
+                <Select
+                  value={form.customer_id}
+                  onChange={(event) => setForm((current) => ({ ...current, customer_id: event.target.value }))}
+                >
+                  <option value="">Select a customer</option>
+                  {(customersQuery.data ?? []).map((customer) => (
+                    <option key={customer.id} value={customer.id}>
+                      {customer.first_name || customer.last_name
+                        ? `${customer.first_name ?? ""} ${customer.last_name ?? ""}`.trim()
+                        : customer.email ?? "Customer record"}
+                    </option>
+                  ))}
+                </Select>
+              </label>
+
+              <label className="space-y-2 text-sm font-medium text-slate-700">
+                Order
+                <Select value={form.order_id} onChange={(event) => setForm((current) => ({ ...current, order_id: event.target.value }))}>
+                  <option value="">Select an order</option>
+                  {(ordersQuery.data ?? []).map((order) => (
+                    <option key={order.id} value={order.id}>
+                      {orderLabel(order)}
+                    </option>
+                  ))}
+                </Select>
+              </label>
+
+              <label className="space-y-2 text-sm font-medium text-slate-700">
+                External ticket ID
+                <Input
+                  value={form.external_ticket_id}
+                  onChange={(event) => setForm((current) => ({ ...current, external_ticket_id: event.target.value }))}
+                  placeholder="ticket-support-001"
+                />
+              </label>
+
+              <label className="space-y-2 text-sm font-medium text-slate-700">
+                Channel
+                <Select value={form.channel} onChange={(event) => setForm((current) => ({ ...current, channel: event.target.value }))}>
+                  <option value="internal_console">Internal console</option>
+                  <option value="email">Email</option>
+                  <option value="chat">Chat</option>
+                </Select>
+              </label>
+
+              <Button
+                disabled={createConversation.isPending}
+                type="button"
+                className="w-full"
+                onClick={() =>
+                  createConversation.mutate({
+                    customer_id: form.customer_id || undefined,
+                    order_id: form.order_id || undefined,
+                    external_ticket_id: form.external_ticket_id || undefined,
+                    channel: form.channel
+                  })
+                }
               >
-                <option value="">Select a customer</option>
-                {(customersQuery.data ?? []).map((customer) => (
-                  <option key={customer.id} value={customer.id}>
-                    {customer.first_name || customer.last_name
-                      ? `${customer.first_name ?? ""} ${customer.last_name ?? ""}`.trim()
-                      : customer.email ?? customer.id}
-                  </option>
-                ))}
-              </Select>
-            </label>
+                {createConversation.isPending ? "Creating..." : "Create conversation"}
+              </Button>
 
-            <label className="space-y-2 text-sm font-medium text-slate-700">
-              Order
-              <Select value={form.order_id} onChange={(event) => setForm((current) => ({ ...current, order_id: event.target.value }))}>
-                <option value="">Select an order</option>
-                {(ordersQuery.data ?? []).map((order) => (
-                  <option key={order.id} value={order.id}>
-                    {order.external_order_id} - {order.total} {order.currency ?? ""}
-                  </option>
-                ))}
-              </Select>
-            </label>
+              {createConversation.isError ? (
+                <p className="text-sm text-rose-700">{messageFromError(createConversation.error)}</p>
+              ) : null}
+            </div>
+          </SectionCard>
 
-            <label className="space-y-2 text-sm font-medium text-slate-700">
-              External ticket ID
-              <Input
-                value={form.external_ticket_id}
-                onChange={(event) => setForm((current) => ({ ...current, external_ticket_id: event.target.value }))}
-                placeholder="ticket-support-001"
-              />
-            </label>
-
-            <label className="space-y-2 text-sm font-medium text-slate-700">
-              Channel
-              <Select value={form.channel} onChange={(event) => setForm((current) => ({ ...current, channel: event.target.value }))}>
-                <option value="internal_console">Internal console</option>
-                <option value="email">Email</option>
-                <option value="chat">Chat</option>
-              </Select>
-            </label>
-
-            <Button
-              disabled={createConversation.isPending}
-              type="button"
-              className="w-full"
-              onClick={() =>
-                createConversation.mutate({
-                  customer_id: form.customer_id || undefined,
-                  order_id: form.order_id || undefined,
-                  external_ticket_id: form.external_ticket_id || undefined,
-                  channel: form.channel
-                })
-              }
-            >
-              {createConversation.isPending ? "Creating..." : "Create conversation"}
-            </Button>
-
-            {createConversation.isError ? (
-              <p className="text-sm text-rose-700">{messageFromError(createConversation.error)}</p>
-            ) : null}
+          <div className="surface-panel p-5">
+            <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-500">Operator guardrails</p>
+            <div className="mt-4 space-y-3 text-sm leading-6 text-slate-600">
+              <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
+                Ground every reply to the linked customer, order, and active store policies.
+              </div>
+              <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
+                Keep AI output draft-only until a human operator reviews the workspace.
+              </div>
+              <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
+                Final delivery still happens in the external support tool after approval.
+              </div>
+            </div>
           </div>
-        </SectionCard>
+        </div>
       </div>
     </div>
   );
@@ -326,7 +460,7 @@ export function SupportConversationPage() {
   return (
     <div className="space-y-8">
       <PageHeader
-        title={`Support conversation ${conversation.external_ticket_id ?? conversation.id}`}
+        title={conversationLabel(conversation)}
         description="Review message history, generate grounded drafts, and keep final delivery under operator control."
         actions={
           <div className="flex flex-wrap gap-3">
@@ -349,7 +483,7 @@ export function SupportConversationPage() {
         }
       />
 
-      <div className="grid gap-6 xl:grid-cols-[0.76fr_1.28fr_0.86fr]">
+      <div className="grid gap-6 xl:grid-cols-[18rem_minmax(0,1fr)_21rem]">
         <SectionCard
           title="Conversation queue"
           actions={
@@ -371,20 +505,23 @@ export function SupportConversationPage() {
                 <Link
                   key={entry.id}
                   to={`/app/support/${storeId}/conversations/${entry.id}`}
-                  className={`block rounded-2xl border p-4 transition ${
-                    entry.id === conversationId ? "border-accent-300 bg-accent-50" : "border-slate-200 bg-white hover:border-accent-200"
+                  className={`block rounded-xl border px-4 py-4 transition ${
+                    entry.id === conversationId ? "border-accent-300 bg-accent-50" : "border-slate-200 bg-white hover:border-accent-200 hover:bg-slate-50"
                   }`}
                 >
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="space-y-2">
-                      <p className="font-semibold text-slate-950">{entry.external_ticket_id ?? entry.id}</p>
-                      <p className="text-xs text-slate-500">{titleize(entry.channel)}</p>
-                      <div className="flex flex-wrap gap-2">
-                        <StatusPill value={entry.status} />
-                        {entry.id === conversationId ? <StatusPill value="selected" /> : null}
+                  <div className="space-y-3">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="space-y-1">
+                        <p className="font-semibold text-slate-950">{conversationLabel(entry)}</p>
+                        <p className="text-xs text-slate-500">{assignedLabel(entry.assigned_user_id)}</p>
                       </div>
+                      <p className="text-[11px] text-slate-500">{formatDate(entry.updated_at)}</p>
                     </div>
-                    <p className="text-xs text-slate-500">{formatDate(entry.updated_at)}</p>
+                    <div className="flex flex-wrap gap-2">
+                      <StatusPill value={entry.status} />
+                      <StatusPill value={titleize(entry.channel)} />
+                      {entry.id === conversationId ? <StatusPill value="selected" /> : null}
+                    </div>
                   </div>
                 </Link>
               ))}
@@ -393,32 +530,43 @@ export function SupportConversationPage() {
         </SectionCard>
 
         <div className="space-y-6">
-          <Card className="p-5">
-            <div className="flex flex-wrap items-start justify-between gap-4">
-              <div className="space-y-2">
-                <div className="flex items-center gap-2">
-                  <span className="inline-flex h-10 w-10 items-center justify-center rounded-2xl bg-accent-50 text-accent-700">
-                    <MessagesSquare className="h-4 w-4" />
-                  </span>
-                  <div>
-                    <p className="text-lg font-semibold text-slate-950">{conversation.external_ticket_id ?? conversation.id}</p>
-                    <p className="text-sm text-slate-600">
-                      {customerLabel(customerQuery.data)} - {orderLabel(orderQuery.data)}
-                    </p>
+          <div className="surface-panel overflow-hidden">
+            <div className="border-b border-slate-200 px-5 py-4">
+              <div className="flex flex-wrap items-start justify-between gap-4">
+                <div className="space-y-3">
+                  <div className="flex items-center gap-3">
+                    <span className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-slate-200 bg-slate-50 text-accent-700">
+                      <MessagesSquare className="h-4 w-4" />
+                    </span>
+                    <div className="space-y-1">
+                      <p className="text-lg font-semibold text-slate-950">{customerLabel(customerQuery.data)}</p>
+                      <p className="text-sm text-slate-600">{conversationLabel(conversation)}</p>
+                    </div>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    <StatusPill value={conversation.status} />
+                    <StatusPill value={titleize(conversation.channel)} />
+                    {latestAiDraft ? <StatusPill value={latestAiDraft.status} /> : null}
                   </div>
                 </div>
-                <div className="flex flex-wrap gap-2">
-                  <StatusPill value={conversation.status} />
-                  <StatusPill value={conversation.channel} />
-                  {latestAiDraft ? <StatusPill value={latestAiDraft.status} /> : null}
+                <div className="space-y-1 text-sm text-slate-500 sm:text-right">
+                  <p>Created {formatDate(conversation.created_at)}</p>
+                  <p>Updated {formatDate(conversation.updated_at)}</p>
                 </div>
               </div>
-              <div className="space-y-1 text-right text-sm text-slate-500">
-                <p>Created {formatDate(conversation.created_at)}</p>
-                <p>Updated {formatDate(conversation.updated_at)}</p>
+            </div>
+
+            <div className="grid gap-4 px-5 py-5 md:grid-cols-2">
+              <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
+                <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">Linked order</p>
+                <p className="mt-2 text-sm leading-6 text-slate-700">{orderLabel(orderQuery.data)}</p>
+              </div>
+              <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
+                <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">Assignment</p>
+                <p className="mt-2 text-sm leading-6 text-slate-700">{assignedLabel(conversation.assigned_user_id)}</p>
               </div>
             </div>
-          </Card>
+          </div>
 
           <SectionCard title="Conversation thread">
             {messagesQuery.isLoading ? (
@@ -427,43 +575,61 @@ export function SupportConversationPage() {
               <ErrorState title="Could not load messages" message={messageFromError(messagesQuery.error)} />
             ) : (
               <div className="space-y-4">
-                {messages.map((message) => (
-                  <Card
-                    key={message.id}
-                    className={message.generated_by_ai ? "border-blue-200 bg-blue-50 p-4" : "p-4"}
-                  >
-                    <div className="flex flex-wrap items-center gap-2">
-                      <p className="font-semibold text-slate-950">
-                        {message.direction === "inbound"
-                          ? "Customer message"
-                          : message.generated_by_ai
-                            ? "Internal AI draft"
-                            : titleize(message.direction)}
-                      </p>
-                      <StatusPill value={message.status} />
-                      {message.generated_by_ai ? <StatusPill value="generated_by_ai" /> : null}
-                    </div>
-                    <p className="mt-3 whitespace-pre-wrap text-sm leading-7 text-slate-700">{message.body}</p>
-                    <div className="mt-3 flex flex-wrap gap-4 text-xs text-slate-500">
-                      <span>{formatDate(message.created_at)}</span>
-                      {message.confidence_score !== null && message.confidence_score !== undefined ? (
-                        <span>Confidence {(message.confidence_score * 100).toFixed(0)}%</span>
+                {messages.map((message) => {
+                  const isAiDraft = message.generated_by_ai;
+                  const messageLabel =
+                    message.direction === "inbound"
+                      ? "Customer message"
+                      : isAiDraft
+                        ? "Internal AI draft"
+                        : titleize(message.direction);
+
+                  return (
+                    <div
+                      key={message.id}
+                      className={`rounded-[1.35rem] border p-4 ${
+                        isAiDraft
+                          ? "border-blue-200 bg-[linear-gradient(135deg,rgba(239,246,255,0.96),rgba(255,255,255,0.98))]"
+                          : "border-slate-200 bg-white"
+                      }`}
+                    >
+                      <div className="flex flex-wrap items-center justify-between gap-3">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <p className="font-semibold text-slate-950">{messageLabel}</p>
+                          <StatusPill value={message.status} />
+                          {isAiDraft ? <StatusPill value="generated_by_ai" /> : null}
+                        </div>
+                        <p className="text-xs text-slate-500">{formatDate(message.created_at)}</p>
+                      </div>
+
+                      <p className="mt-3 whitespace-pre-wrap text-sm leading-7 text-slate-700">{message.body}</p>
+
+                      <div className="mt-4 flex flex-wrap gap-4 text-xs text-slate-500">
+                        {message.confidence_score !== null && message.confidence_score !== undefined ? (
+                          <span>Confidence {(message.confidence_score * 100).toFixed(0)}%</span>
+                        ) : null}
+                        {message.cited_order_facts_summary ? <span>Grounded to current order context</span> : null}
+                      </div>
+
+                      {message.cited_order_facts_summary ? (
+                        <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm leading-6 text-slate-600">
+                          {message.cited_order_facts_summary}
+                        </div>
                       ) : null}
-                      {message.cited_order_facts_summary ? <span>{message.cited_order_facts_summary}</span> : null}
                     </div>
-                  </Card>
-                ))}
+                  );
+                })}
               </div>
             )}
           </SectionCard>
 
           {latestAiDraft ? (
-            <SectionCard title="Internal AI draft">
+            <SectionCard title="Reply workshop">
               <div className="space-y-4">
-                <div className="flex flex-wrap items-start justify-between gap-3 rounded-2xl border border-blue-200 bg-blue-50 p-4">
+                <div className="flex flex-wrap items-start justify-between gap-3 rounded-[1.35rem] border border-blue-200 bg-[linear-gradient(135deg,rgba(239,246,255,0.96),rgba(255,255,255,0.98))] p-4">
                   <div className="space-y-2">
                     <div className="flex items-center gap-2">
-                      <span className="inline-flex h-10 w-10 items-center justify-center rounded-2xl bg-white text-accent-700 shadow-sm">
+                      <span className="inline-flex h-10 w-10 items-center justify-center rounded-xl bg-white text-accent-700 shadow-sm">
                         <Sparkles className="h-4 w-4" />
                       </span>
                       <div>
@@ -482,7 +648,7 @@ export function SupportConversationPage() {
                   />
                 ) : null}
 
-                <Card className="p-5">
+                <Card className="border-slate-200 bg-slate-50 p-5">
                   <p className="whitespace-pre-wrap text-sm leading-7 text-slate-700">{latestAiDraft.body}</p>
                 </Card>
 
@@ -540,16 +706,16 @@ export function SupportConversationPage() {
           </SectionCard>
         </div>
 
-        <div className="space-y-6">
+        <div className="space-y-6 xl:sticky xl:top-24 xl:self-start">
           <DetailPanel title="Conversation context" subtitle="Customer, order, and case metadata used to ground the workspace">
-            <KeyValueGrid
+            <SupportMetaList
               items={[
                 { label: "Status", value: <StatusPill value={conversation.status} /> },
                 { label: "Channel", value: titleize(conversation.channel) },
                 { label: "Customer", value: customerLabel(customerQuery.data) },
                 { label: "Order", value: orderLabel(orderQuery.data) },
-                { label: "Assigned user", value: conversation.assigned_user_id ?? "Unassigned" },
-                { label: "Ticket", value: conversation.external_ticket_id ?? conversation.id }
+                { label: "Assignment", value: assignedLabel(conversation.assigned_user_id) },
+                { label: "Ticket", value: conversationLabel(conversation) }
               ]}
             />
           </DetailPanel>
@@ -587,7 +753,7 @@ export function SupportConversationPage() {
 
           <SectionCard title="Internal review state">
             <div className="space-y-4 text-sm text-slate-600">
-              <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50 p-4">
+              <div className="rounded-xl border border-dashed border-slate-200 bg-slate-50 p-4">
                 <p className="font-medium text-slate-900">Operator review posture</p>
                 <p className="mt-2">
                   CommerceOps prepares drafts in-platform. Final customer delivery still happens in your external support system after human review.
