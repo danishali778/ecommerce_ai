@@ -16,7 +16,10 @@ export const AppStateContext = React.createContext<AppStateContextValue | null>(
 export function AppStateProvider({ children }: React.PropsWithChildren) {
   const { me } = useAuth();
   const [selectedStoreId, setSelectedStoreIdState] = React.useState<string | null>(() => localStorage.getItem(STORAGE_KEY));
-  const [sidebarOpen, setSidebarOpen] = React.useState(true);
+  const [sidebarOpen, setSidebarOpen] = React.useState(() => {
+    if (typeof window === "undefined") return true;
+    return window.innerWidth >= 1024;
+  });
 
   React.useEffect(() => {
     if (!me?.accessible_stores?.length) return;
