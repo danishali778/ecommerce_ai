@@ -1,4 +1,5 @@
 from app.modules.catalog import CatalogModule
+from app.core.runtime import call_with_optional_trace
 
 
 class CatalogService:
@@ -15,10 +16,17 @@ class CatalogService:
     def list_drafts(self, user_context: dict, store_id, product_id) -> list[dict]:
         return self.module.list_drafts(user_context, store_id, product_id)
 
-    def generate_draft(self, user_context: dict, store_id, product_id, payload) -> dict:
-        result = self.module.generate_draft(user_context, store_id, product_id, payload)
+    def generate_draft(self, user_context: dict, store_id, product_id, payload, trace_id: str | None = None) -> dict:
+        result = call_with_optional_trace(
+            self.module.generate_draft,
+            user_context,
+            store_id,
+            product_id,
+            payload,
+            trace_id=trace_id,
+        )
         if result.pop("_enqueue_generation", False):
-            self._enqueue_generation(result["agent_run_id"])
+            call_with_optional_trace(self._enqueue_generation, result["agent_run_id"], trace_id=trace_id)
         return result
 
     def get_draft(self, user_context: dict, store_id, product_id, draft_id) -> dict:
@@ -50,8 +58,11 @@ class CatalogService:
     def get_customer(self, user_context: dict, store_id, customer_id) -> dict:
         return self.module.get_customer(user_context, store_id, customer_id)
 
+    def execute_generation(self, agent_run_id: str, trace_id: str | None = None) -> None:
+        call_with_optional_trace(self.module.agent_runner.execute_generation, agent_run_id, trace_id=trace_id)
+
     @staticmethod
-    def _enqueue_generation(agent_run_id: str) -> None:
+    def _enqueue_generation(agent_run_id: str, trace_id: str | None = None) -> None:
         from app.tasks.catalog import generate_product_content_draft
 
-        generate_product_content_draft.delay(agent_run_id)
+        generate_product_content_draft.delay(agent_run_id, trace_id)

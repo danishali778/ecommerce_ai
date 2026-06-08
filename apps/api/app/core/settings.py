@@ -63,6 +63,17 @@ class Settings(BaseSettings):
 
     log_level: str = Field(default="INFO", alias="LOG_LEVEL")
 
+    sync_retry_max_retries: int = Field(default=3, alias="SYNC_RETRY_MAX_RETRIES")
+    sync_retry_base_delay_seconds: int = Field(default=30, alias="SYNC_RETRY_BASE_DELAY_SECONDS")
+    workflow_retry_max_retries: int = Field(default=3, alias="WORKFLOW_RETRY_MAX_RETRIES")
+    workflow_retry_base_delay_seconds: int = Field(default=20, alias="WORKFLOW_RETRY_BASE_DELAY_SECONDS")
+    approval_retry_max_retries: int = Field(default=2, alias="APPROVAL_RETRY_MAX_RETRIES")
+    approval_retry_base_delay_seconds: int = Field(default=30, alias="APPROVAL_RETRY_BASE_DELAY_SECONDS")
+    notification_retry_max_retries: int = Field(default=3, alias="NOTIFICATION_RETRY_MAX_RETRIES")
+    notification_retry_base_delay_seconds: int = Field(default=45, alias="NOTIFICATION_RETRY_BASE_DELAY_SECONDS")
+    agent_retry_max_retries: int = Field(default=2, alias="AGENT_RETRY_MAX_RETRIES")
+    agent_retry_base_delay_seconds: int = Field(default=30, alias="AGENT_RETRY_BASE_DELAY_SECONDS")
+
     @property
     def resolved_celery_broker_url(self) -> str:
         return self.celery_broker_url or self.redis_url

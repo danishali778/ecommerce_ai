@@ -10,7 +10,7 @@ from app.repositories.workflow_repository import WorkflowRepository
 from .agent_runs import get_agent_run, list_agent_runs
 from .audit_events import list_audit_events
 from .summary import get_summary
-from .workflow_runs import get_workflow_run, list_workflow_runs
+from .workflow_runs import get_workflow_run, list_workflow_runs, retry_workflow_run
 
 
 class DashboardModule:
@@ -28,6 +28,9 @@ class DashboardModule:
 
     def get_workflow_run(self, user_context: dict, store_id: UUID, workflow_run_id: UUID) -> dict:
         return get_workflow_run(self, user_context, store_id, workflow_run_id)
+
+    def retry_workflow_run(self, user_context: dict, store_id: UUID, workflow_run_id: UUID, trace_id: str | None = None) -> dict:
+        return retry_workflow_run(self, user_context, store_id, workflow_run_id, trace_id=trace_id)
 
     def list_agent_runs(self, user_context: dict, store_id: UUID, *, agent_type: str | None = None, status: str | None = None, workflow_run_id: UUID | None = None) -> list[dict]:
         return list_agent_runs(self, user_context, store_id, agent_type=agent_type, status=status, workflow_run_id=workflow_run_id)

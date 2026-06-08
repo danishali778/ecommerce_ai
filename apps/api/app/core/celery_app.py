@@ -15,6 +15,11 @@ celery_app = Celery(
         "app.tasks.approvals",
         "app.tasks.policies",
         "app.tasks.support",
+        "app.tasks.inventory",
+        "app.tasks.fraud",
+        "app.tasks.pricing",
+        "app.tasks.workflows",
+        "app.tasks.notifications",
     ],
 )
 celery_app.conf.update(

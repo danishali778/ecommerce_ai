@@ -28,3 +28,25 @@ def get_workflow_run(module, user_context: dict, store_id: UUID, workflow_run_id
         raise AppError(code="not_found", message="Workflow run not found", status_code=404)
     return serialize_workflow_run(run)
 
+
+def retry_workflow_run(module, user_context: dict, store_id: UUID, workflow_run_id: UUID, trace_id: str | None = None) -> dict:
+    require_permission(user_context, Permission.WORKFLOWS_MANAGE)
+    store = module.require_store(user_context, store_id)
+    run = module.workflow_repository.get_workflow_run(store.organization_id, store.id, workflow_run_id)
+    if run is None:
+        raise AppError(code="not_found", message="Workflow run not found", status_code=404)
+    if run.status != "failed":
+        raise AppError(code="conflict", message="Only failed workflow runs can be retried", status_code=409)
+    module.workflow_repository.update_workflow_run(
+        run,
+        status="queued",
+        trace_id=trace_id or run.trace_id,
+        error_message=None,
+        next_retry_at=None,
+        terminal_failed_at=None,
+    )
+    module.db.commit()
+    response = serialize_workflow_run(run)
+    response["_enqueue_workflow_run"] = True
+    return response
+

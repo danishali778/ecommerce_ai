@@ -750,3 +750,289 @@ def test_phase1_support_policy_fraud_inventory_and_analytics_routes(monkeypatch)
     assert client.get(f"/api/v1/stores/{store_id}/analytics/automation", headers=headers).status_code == 200
     client.app.dependency_overrides.clear()
     get_settings.cache_clear()
+
+
+def test_phase2_pricing_workflow_and_notification_routes(monkeypatch):
+    client = _build_client(monkeypatch)
+    from app.api.deps.auth import get_current_user_context
+    from app.api.routes.analytics import get_analytics_service
+    from app.api.routes.notification_channels import get_notification_service as get_store_notification_service
+    from app.api.routes.pricing import get_pricing_service
+    from app.api.routes.workflows import get_workflow_service
+
+    store_id = str(uuid4())
+    rule_id = str(uuid4())
+    recommendation_id = str(uuid4())
+    workflow_id = str(uuid4())
+    channel_id = str(uuid4())
+    preference_id = str(uuid4())
+    delivery_id = str(uuid4())
+
+    class FakePricingService:
+        def list_rules(self, user_context, requested_store_id):
+            assert str(requested_store_id) == store_id
+            return [self.get_rule(user_context, requested_store_id, rule_id)]
+
+        def create_rule(self, user_context, requested_store_id, payload):
+            return self.get_rule(user_context, requested_store_id, rule_id) | {"strategy": payload.strategy}
+
+        def get_rule(self, user_context, requested_store_id, requested_rule_id):
+            assert str(requested_rule_id) == rule_id
+            return {
+                "id": rule_id,
+                "store_id": store_id,
+                "product_id": str(uuid4()),
+                "variant_id": None,
+                "strategy": "MATCH",
+                "delta_amount": None,
+                "delta_percentage": None,
+                "markup_percentage": None,
+                "surge_percentage": None,
+                "manual_target_price": None,
+                "cost": "10.00",
+                "margin_floor": "12.00",
+                "price_ceiling": "25.00",
+                "approval_threshold_percent": "5.00",
+                "force_review": False,
+                "is_enabled": True,
+                "version_number": 1,
+                "created_at": "2026-06-07T00:00:00+00:00",
+                "updated_at": "2026-06-07T00:00:00+00:00",
+            }
+
+        def update_rule(self, user_context, requested_store_id, requested_rule_id, payload):
+            return self.get_rule(user_context, requested_store_id, requested_rule_id) | {"version_number": 2}
+
+        def delete_rule(self, user_context, requested_store_id, requested_rule_id):
+            return {"deleted": True, "rule_id": str(requested_rule_id)}
+
+        def create_reference_price(self, user_context, requested_store_id, payload):
+            return {
+                "reference_input_id": str(uuid4()),
+                "recommendation": self.get_recommendation(user_context, requested_store_id, recommendation_id),
+            }
+
+        def import_reference_prices(self, user_context, requested_store_id, csv_bytes):
+            assert b"variant_id" in csv_bytes
+            return {
+                "import_batch_id": "batch-1",
+                "imported_count": 1,
+                "recommendation_count": 1,
+                "blocked_count": 0,
+            }
+
+        def simulate(self, user_context, requested_store_id, payload):
+            return {
+                "recommended_price": "18.00",
+                "validation_status": "valid",
+                "requires_approval": False,
+                "explanation_json": {"reasons": []},
+                "strategy_inputs_json": {"strategy": payload.strategy},
+            }
+
+        def list_recommendations(self, user_context, requested_store_id, **filters):
+            return [self.get_recommendation(user_context, requested_store_id, recommendation_id)]
+
+        def get_recommendation(self, user_context, requested_store_id, requested_recommendation_id):
+            assert str(requested_recommendation_id) == recommendation_id
+            return {
+                "id": recommendation_id,
+                "pricing_rule_id": rule_id,
+                "reference_input_id": str(uuid4()),
+                "product_id": str(uuid4()),
+                "variant_id": None,
+                "workflow_run_id": None,
+                "approval_request_id": str(uuid4()),
+                "current_price": "20.00",
+                "recommended_price": "18.00",
+                "cost_snapshot": "10.00",
+                "margin_floor_snapshot": "12.00",
+                "price_ceiling_snapshot": "25.00",
+                "reference_price_snapshot": "19.00",
+                "applied_strategy": "MATCH",
+                "validation_status": "valid",
+                "status": "pending_approval",
+                "requires_approval": True,
+                "explanation_json": {"reasons": ["approval_threshold_exceeded"]},
+                "strategy_inputs_json": {"strategy": "MATCH"},
+                "created_at": "2026-06-07T00:00:00+00:00",
+                "updated_at": "2026-06-07T00:00:00+00:00",
+            }
+
+    class FakeWorkflowService:
+        def _payload(self):
+            return {
+                "id": workflow_id,
+                "store_id": store_id,
+                "name": "P2 Workflow",
+                "key": "wf-store-1",
+                "description": "Description",
+                "phase_scope": "p2",
+                "trigger": "sync.completed",
+                "condition_groups": [],
+                "actions": [{"type": "create_alert", "params": {}}],
+                "approval_required": False,
+                "enabled": True,
+                "is_system_defined": False,
+                "version_number": 1,
+                "created_at": "2026-06-07T00:00:00+00:00",
+                "updated_at": "2026-06-07T00:00:00+00:00",
+            }
+
+        def list_workflows(self, user_context, requested_store_id):
+            return [self._payload()]
+
+        def create_workflow(self, user_context, requested_store_id, payload):
+            return self._payload() | {"name": payload.name}
+
+        def get_workflow(self, user_context, requested_store_id, requested_workflow_id):
+            assert str(requested_workflow_id) == workflow_id
+            return self._payload()
+
+        def update_workflow(self, user_context, requested_store_id, requested_workflow_id, payload):
+            return self._payload() | {"version_number": 2}
+
+        def delete_workflow(self, user_context, requested_store_id, requested_workflow_id):
+            return {"deleted": True, "workflow_id": str(requested_workflow_id)}
+
+        def enable_workflow(self, user_context, requested_store_id, requested_workflow_id):
+            return self._payload() | {"enabled": True}
+
+        def disable_workflow(self, user_context, requested_store_id, requested_workflow_id):
+            return self._payload() | {"enabled": False}
+
+        def test_workflow(self, user_context, requested_store_id, requested_workflow_id, payload):
+            return {
+                "status": "succeeded",
+                "matched": True,
+                "workflow_run_id": str(uuid4()),
+                "results": {"dry_run": True},
+            }
+
+    class FakeNotificationService:
+        def _channel(self):
+            return {
+                "id": channel_id,
+                "store_id": store_id,
+                "name": "Ops Webhook",
+                "channel_type": "webhook",
+                "status": "connected",
+                "is_enabled": True,
+                "metadata_json": {"target_url": "https://example.com/webhook", "target_host": "example.com"},
+                "has_secret": True,
+                "last_test_status": None,
+                "last_test_error": None,
+                "last_tested_at": None,
+                "created_at": "2026-06-07T00:00:00+00:00",
+                "updated_at": "2026-06-07T00:00:00+00:00",
+            }
+
+        def list_channels(self, user_context, requested_store_id):
+            return [self._channel()]
+
+        def create_channel(self, user_context, requested_store_id, payload):
+            return self._channel() | {"name": payload.name}
+
+        def get_channel(self, user_context, requested_store_id, requested_channel_id):
+            assert str(requested_channel_id) == channel_id
+            return self._channel()
+
+        def update_channel(self, user_context, requested_store_id, requested_channel_id, payload):
+            return self._channel() | {"is_enabled": payload.is_enabled if payload.is_enabled is not None else True}
+
+        def delete_channel(self, user_context, requested_store_id, requested_channel_id):
+            return {"deleted": True, "channel_id": str(requested_channel_id)}
+
+        def test_channel(self, user_context, requested_store_id, requested_channel_id):
+            return {"channel_id": channel_id, "status": "queued", "delivery_id": delivery_id, "message": "Test delivery queued"}
+
+        def list_preferences(self, user_context, requested_store_id):
+            return [
+                {
+                    "id": preference_id,
+                    "channel_id": channel_id,
+                    "event_type": "approval_pending",
+                    "is_enabled": True,
+                    "created_at": "2026-06-07T00:00:00+00:00",
+                    "updated_at": "2026-06-07T00:00:00+00:00",
+                }
+            ]
+
+        def update_preference(self, user_context, requested_store_id, requested_preference_id, payload):
+            return {
+                "id": preference_id,
+                "channel_id": channel_id,
+                "event_type": "approval_pending",
+                "is_enabled": payload.is_enabled,
+                "created_at": "2026-06-07T00:00:00+00:00",
+                "updated_at": "2026-06-07T00:00:00+00:00",
+            }
+
+    class FakeAnalyticsService:
+        def get_pricing_metrics(self, user_context, requested_store_id, date_from=None, date_to=None):
+            return {"range": {"date_from": "2026-05-01T00:00:00+00:00", "date_to": "2026-06-01T00:00:00+00:00"}, "generated_at": "2026-06-07T00:00:00+00:00", "sections": {"pricing": {"recommendations_total": 1}}}
+
+        def get_workflow_metrics(self, user_context, requested_store_id, date_from=None, date_to=None):
+            return {"range": {"date_from": "2026-05-01T00:00:00+00:00", "date_to": "2026-06-01T00:00:00+00:00"}, "generated_at": "2026-06-07T00:00:00+00:00", "sections": {"workflows": {"workflow_definition_count": 1}}}
+
+        def get_notification_metrics(self, user_context, requested_store_id, date_from=None, date_to=None):
+            return {"range": {"date_from": "2026-05-01T00:00:00+00:00", "date_to": "2026-06-01T00:00:00+00:00"}, "generated_at": "2026-06-07T00:00:00+00:00", "sections": {"notifications": {"configured_channels": 1}}}
+
+    client.app.dependency_overrides[get_current_user_context] = _auth_context
+    client.app.dependency_overrides[get_pricing_service] = lambda: FakePricingService()
+    client.app.dependency_overrides[get_workflow_service] = lambda: FakeWorkflowService()
+    client.app.dependency_overrides[get_store_notification_service] = lambda: FakeNotificationService()
+    client.app.dependency_overrides[get_analytics_service] = lambda: FakeAnalyticsService()
+    headers = {"Authorization": "Bearer test"}
+
+    assert client.get(f"/api/v1/stores/{store_id}/pricing/rules", headers=headers).status_code == 200
+    assert client.post(f"/api/v1/stores/{store_id}/pricing/rules", json={"product_id": str(uuid4()), "strategy": "MATCH"}, headers=headers).status_code == 201
+    assert client.get(f"/api/v1/stores/{store_id}/pricing/rules/{rule_id}", headers=headers).status_code == 200
+    assert client.patch(f"/api/v1/stores/{store_id}/pricing/rules/{rule_id}", json={"force_review": True}, headers=headers).status_code == 200
+    assert client.delete(f"/api/v1/stores/{store_id}/pricing/rules/{rule_id}", headers=headers).status_code == 200
+    assert client.post(
+        f"/api/v1/stores/{store_id}/pricing/reference-prices",
+        json={"product_id": str(uuid4()), "reference_price": "19.00"},
+        headers=headers,
+    ).status_code == 201
+    assert client.post(
+        f"/api/v1/stores/{store_id}/pricing/reference-prices/import",
+        content="variant_id,reference_price\n,\n",
+        headers={**headers, "Content-Type": "text/csv"},
+    ).status_code == 202
+    assert client.post(f"/api/v1/stores/{store_id}/pricing/simulate", json={"strategy": "MATCH", "reference_price": "18.00"}, headers=headers).status_code == 200
+    assert client.get(f"/api/v1/stores/{store_id}/pricing/recommendations", headers=headers).status_code == 200
+    assert client.get(f"/api/v1/stores/{store_id}/pricing/recommendations/{recommendation_id}", headers=headers).status_code == 200
+
+    assert client.get(f"/api/v1/stores/{store_id}/workflows", headers=headers).status_code == 200
+    assert client.post(
+        f"/api/v1/stores/{store_id}/workflows",
+        json={"name": "Workflow", "trigger": "sync.completed", "condition_groups": [], "actions": [{"type": "create_alert", "params": {}}]},
+        headers=headers,
+    ).status_code == 201
+    assert client.get(f"/api/v1/stores/{store_id}/workflows/{workflow_id}", headers=headers).status_code == 200
+    assert client.patch(f"/api/v1/stores/{store_id}/workflows/{workflow_id}", json={"enabled": False}, headers=headers).status_code == 200
+    assert client.post(f"/api/v1/stores/{store_id}/workflows/{workflow_id}/enable", headers=headers).status_code == 200
+    assert client.post(f"/api/v1/stores/{store_id}/workflows/{workflow_id}/disable", headers=headers).status_code == 200
+    assert client.post(f"/api/v1/stores/{store_id}/workflows/{workflow_id}/test", json={"event_payload": {}}, headers=headers).status_code == 200
+    assert client.delete(f"/api/v1/stores/{store_id}/workflows/{workflow_id}", headers=headers).status_code == 200
+
+    assert client.get(f"/api/v1/stores/{store_id}/notification-channels", headers=headers).status_code == 200
+    assert client.post(
+        f"/api/v1/stores/{store_id}/notification-channels",
+        json={"name": "Ops Webhook", "channel_type": "webhook", "metadata_json": {"target_url": "https://example.com/webhook"}, "secret_value": "token"},
+        headers=headers,
+    ).status_code == 201
+    assert client.get(f"/api/v1/stores/{store_id}/notification-channels/{channel_id}", headers=headers).status_code == 200
+    assert client.patch(f"/api/v1/stores/{store_id}/notification-channels/{channel_id}", json={"is_enabled": False}, headers=headers).status_code == 200
+    assert client.post(f"/api/v1/stores/{store_id}/notification-channels/{channel_id}/test", headers=headers).status_code == 202
+    assert client.get(f"/api/v1/stores/{store_id}/notification-preferences", headers=headers).status_code == 200
+    assert client.patch(f"/api/v1/stores/{store_id}/notification-preferences/{preference_id}", json={"is_enabled": False}, headers=headers).status_code == 200
+    assert client.delete(f"/api/v1/stores/{store_id}/notification-channels/{channel_id}", headers=headers).status_code == 200
+
+    assert client.get(f"/api/v1/stores/{store_id}/analytics/pricing", headers=headers).status_code == 200
+    assert client.get(f"/api/v1/stores/{store_id}/analytics/workflows", headers=headers).status_code == 200
+    assert client.get(f"/api/v1/stores/{store_id}/analytics/notifications", headers=headers).status_code == 200
+
+    client.app.dependency_overrides.clear()
+    get_settings.cache_clear()

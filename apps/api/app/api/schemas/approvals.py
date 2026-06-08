@@ -8,8 +8,12 @@ class ApprovalDecisionRequest(BaseModel):
 
 
 class ApprovalResponse(ApprovalSummary):
-    pass
+    workflow_run_id: str | None = None
+    agent_run_id: str | None = None
+    proposed_action_json: dict | None = None
 
 
 class ApprovalActionResponse(ApprovalSummary):
-    pass
+    workflow_run_id: str | None = None
+    agent_run_id: str | None = None
+    proposed_action_json: dict | None = None

@@ -27,6 +27,7 @@ from app.api.schemas.stores import (
     SubmitApprovalRequest,
     SyncRunCreateRequest,
 )
+from app.core.runtime import call_with_optional_trace
 from app.core.responses import success_response
 from app.services.catalog import CatalogService
 from app.services.dashboard import DashboardService
@@ -123,7 +124,17 @@ def create_sync_run(
     idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
     service: SyncService = Depends(get_sync_service),
 ):
-    return success_response(request, service.create_sync_run(user_context, store_id, payload.mode, idempotency_key))
+    return success_response(
+        request,
+        call_with_optional_trace(
+            service.create_sync_run,
+            user_context,
+            store_id,
+            payload.mode,
+            idempotency_key,
+            trace_id=request.state.request_id,
+        ),
+    )
 
 
 @router.get("/{store_id}/sync-runs", response_model=SuccessEnvelope[list[SyncRunSummary]], summary="List sync runs")
@@ -162,7 +173,17 @@ def retry_sync_run(
     idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
     service: SyncService = Depends(get_sync_service),
 ):
-    return success_response(request, service.retry_sync_run(user_context, store_id, sync_run_id, idempotency_key))
+    return success_response(
+        request,
+        call_with_optional_trace(
+            service.retry_sync_run,
+            user_context,
+            store_id,
+            sync_run_id,
+            idempotency_key,
+            trace_id=request.state.request_id,
+        ),
+    )
 
 
 @router.get(
@@ -231,7 +252,17 @@ def generate_product_draft(
     user_context=Depends(get_current_user_context),
     service: CatalogService = Depends(get_catalog_service),
 ):
-    return success_response(request, service.generate_draft(user_context, store_id, product_id, payload))
+    return success_response(
+        request,
+        call_with_optional_trace(
+            service.generate_draft,
+            user_context,
+            store_id,
+            product_id,
+            payload,
+            trace_id=request.state.request_id,
+        ),
+    )
 
 
 @router.get(

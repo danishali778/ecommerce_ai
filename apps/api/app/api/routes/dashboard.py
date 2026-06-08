@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 from app.api.deps.auth import get_current_user_context
 from app.api.deps.db import get_db
 from app.api.schemas.common import AgentRunSummary, AuditEventSummary, SuccessEnvelope, WorkflowRunSummary
+from app.core.runtime import call_with_optional_trace
 from app.core.responses import success_response
 from app.services.dashboard import DashboardService
 
@@ -50,6 +51,31 @@ def get_workflow_run(
     service: DashboardService = Depends(get_dashboard_service),
 ):
     return success_response(request, service.get_workflow_run(user_context, store_id, workflow_run_id))
+
+
+@router.post(
+    "/{store_id}/workflow-runs/{workflow_run_id}/retry",
+    status_code=202,
+    response_model=SuccessEnvelope[WorkflowRunSummary],
+    summary="Retry failed workflow run",
+)
+def retry_workflow_run(
+    store_id: UUID,
+    workflow_run_id: UUID,
+    request: Request,
+    user_context=Depends(get_current_user_context),
+    service: DashboardService = Depends(get_dashboard_service),
+):
+    return success_response(
+        request,
+        call_with_optional_trace(
+            service.retry_workflow_run,
+            user_context,
+            store_id,
+            workflow_run_id,
+            trace_id=request.state.request_id,
+        ),
+    )
 
 
 @router.get("/{store_id}/agent-runs", response_model=SuccessEnvelope[list[AgentRunSummary]], summary="List agent runs")

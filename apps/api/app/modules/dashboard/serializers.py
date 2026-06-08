@@ -8,6 +8,14 @@ def serialize_workflow_run(run) -> dict:
         "input_payload": run.input_payload,
         "output_payload": run.output_payload,
         "error_message": run.error_message,
+        "trace_id": run.trace_id,
+        "failure_class": run.failure_class,
+        "failure_code": run.failure_code,
+        "last_error_at": run.last_error_at.isoformat() if run.last_error_at else None,
+        "next_retry_at": run.next_retry_at.isoformat() if run.next_retry_at else None,
+        "max_retries": run.max_retries,
+        "attempt_count": run.attempt_count,
+        "retry_count": run.retry_count,
     }
 
 
@@ -23,6 +31,13 @@ def serialize_agent_run(run) -> dict:
         "retrieved_context_summary": run.retrieved_context_summary,
         "output_summary": run.output_summary,
         "error_message": run.error_message,
+        "trace_id": run.trace_id,
+        "failure_class": run.failure_class,
+        "failure_code": run.failure_code,
+        "last_error_at": run.last_error_at.isoformat() if run.last_error_at else None,
+        "next_retry_at": run.next_retry_at.isoformat() if run.next_retry_at else None,
+        "max_retries": run.max_retries,
+        "attempt_count": run.attempt_count,
     }
 
 

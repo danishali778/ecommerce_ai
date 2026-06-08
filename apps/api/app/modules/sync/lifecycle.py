@@ -8,7 +8,7 @@ from app.core.permissions import Permission
 from .serializers import serialize_sync_run
 
 
-def create_sync_run(module, user_context: dict, store_id: UUID, mode: str, idempotency_key: str | None) -> dict:
+def create_sync_run(module, user_context: dict, store_id: UUID, mode: str, idempotency_key: str | None, trace_id: str | None = None) -> dict:
     require_permission(user_context, Permission.SYNC_TRIGGER)
     store = module.require_store(user_context, store_id)
     existing_response, _, fingerprint = resolve_idempotent_response(
@@ -32,6 +32,7 @@ def create_sync_run(module, user_context: dict, store_id: UUID, mode: str, idemp
         integration_id=integration.id,
         mode=mode,
         status="queued",
+        trace_id=trace_id,
         triggered_by_user_id=UUID(user_context["user"]["id"]),
         entity_counts_json={},
         error_details_json={},
@@ -66,7 +67,7 @@ def get_sync_run(module, user_context: dict, store_id: UUID, sync_run_id: UUID) 
     return serialize_sync_run(sync_run)
 
 
-def retry_sync_run(module, user_context: dict, store_id: UUID, sync_run_id: UUID, idempotency_key: str | None) -> dict:
+def retry_sync_run(module, user_context: dict, store_id: UUID, sync_run_id: UUID, idempotency_key: str | None, trace_id: str | None = None) -> dict:
     require_permission(user_context, Permission.SYNC_TRIGGER)
     store = module.require_store(user_context, store_id)
     existing_response, _, fingerprint = resolve_idempotent_response(
@@ -90,6 +91,7 @@ def retry_sync_run(module, user_context: dict, store_id: UUID, sync_run_id: UUID
         integration_id=integration.id,
         mode="retry_full",
         status="queued",
+        trace_id=trace_id,
         triggered_by_user_id=UUID(user_context["user"]["id"]),
         retry_of_sync_run_id=previous.id,
         entity_counts_json={},

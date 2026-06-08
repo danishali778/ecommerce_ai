@@ -31,8 +31,8 @@ class SyncModule:
         self.fraud_module = FraudModule(db)
         self.inventory_module = InventoryModule(db)
 
-    def create_sync_run(self, user_context: dict, store_id: UUID, mode: str, idempotency_key: str | None) -> dict:
-        return create_sync_run(self, user_context, store_id, mode, idempotency_key)
+    def create_sync_run(self, user_context: dict, store_id: UUID, mode: str, idempotency_key: str | None, trace_id: str | None = None) -> dict:
+        return create_sync_run(self, user_context, store_id, mode, idempotency_key, trace_id=trace_id)
 
     def list_sync_runs(self, user_context: dict, store_id: UUID) -> list[dict]:
         return list_sync_runs(self, user_context, store_id)
@@ -40,11 +40,11 @@ class SyncModule:
     def get_sync_run(self, user_context: dict, store_id: UUID, sync_run_id: UUID) -> dict:
         return get_sync_run(self, user_context, store_id, sync_run_id)
 
-    def retry_sync_run(self, user_context: dict, store_id: UUID, sync_run_id: UUID, idempotency_key: str | None) -> dict:
-        return retry_sync_run(self, user_context, store_id, sync_run_id, idempotency_key)
+    def retry_sync_run(self, user_context: dict, store_id: UUID, sync_run_id: UUID, idempotency_key: str | None, trace_id: str | None = None) -> dict:
+        return retry_sync_run(self, user_context, store_id, sync_run_id, idempotency_key, trace_id=trace_id)
 
-    def execute_sync_run(self, sync_run_id: str) -> None:
-        execute_sync_run(self, sync_run_id)
+    def execute_sync_run(self, sync_run_id: str, trace_id: str | None = None) -> None:
+        execute_sync_run(self, sync_run_id, trace_id=trace_id)
 
     def schedule_all_store_syncs(self) -> list[str]:
         return schedule_all_store_syncs(self)
