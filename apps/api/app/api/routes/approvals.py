@@ -7,6 +7,7 @@ from app.api.deps.auth import get_current_user_context
 from app.api.deps.db import get_db
 from app.api.schemas.approvals import ApprovalActionResponse, ApprovalDecisionRequest, ApprovalResponse
 from app.api.schemas.common import SuccessEnvelope
+from app.core.runtime import call_with_optional_trace
 from app.core.responses import success_response
 from app.services.approvals import ApprovalService
 
@@ -47,7 +48,17 @@ def approve(
     idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
     service: ApprovalService = Depends(get_approval_service),
 ):
-    return success_response(request, service.approve(user_context, approval_id, payload.review_notes, idempotency_key))
+    return success_response(
+        request,
+        call_with_optional_trace(
+            service.approve,
+            user_context,
+            approval_id,
+            payload.review_notes,
+            idempotency_key,
+            trace_id=request.state.request_id,
+        ),
+    )
 
 
 @router.post("/{approval_id}/reject", response_model=SuccessEnvelope[ApprovalActionResponse], summary="Reject approval")
@@ -87,4 +98,14 @@ def retry_execution(
     idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
     service: ApprovalService = Depends(get_approval_service),
 ):
-    return success_response(request, service.retry_execution(user_context, approval_id, payload.review_notes, idempotency_key))
+    return success_response(
+        request,
+        call_with_optional_trace(
+            service.retry_execution,
+            user_context,
+            approval_id,
+            payload.review_notes,
+            idempotency_key,
+            trace_id=request.state.request_id,
+        ),
+    )

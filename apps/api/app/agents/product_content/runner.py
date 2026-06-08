@@ -31,6 +31,7 @@ class ProductContentAgentRunner:
         generation_targets: list[str],
         tone: str,
         constraints: dict,
+        trace_id: str | None = None,
     ) -> dict:
         workflow = self.workflow_repository.get_workflow_by_key("product_content_generated")
         workflow_run = self.workflow_repository.create_workflow_run(
@@ -41,6 +42,7 @@ class ProductContentAgentRunner:
             trigger_entity_type="product",
             trigger_entity_id=product.id,
             status="queued",
+            trace_id=trace_id,
             input_payload={
                 "product_id": str(product.id),
                 "targets": generation_targets,
@@ -61,6 +63,7 @@ class ProductContentAgentRunner:
             tool_calls_json=[],
             model_name=self.llm_provider.model,
             status="queued",
+            trace_id=trace_id,
         )
         return {
             "workflow_run_id": str(workflow_run.id),
@@ -68,7 +71,7 @@ class ProductContentAgentRunner:
             "status": workflow_run.status,
         }
 
-    def execute_generation(self, agent_run_id: str) -> dict | None:
+    def execute_generation(self, agent_run_id: str, trace_id: str | None = None) -> dict | None:
         agent_run = self.db.get(AgentRun, UUID(agent_run_id))
         if agent_run is None:
             return None
@@ -88,10 +91,11 @@ class ProductContentAgentRunner:
             return None
         try:
             now = datetime.now(timezone.utc)
-            self.workflow_repository.update_agent_run(agent_run, status="running")
+            self.workflow_repository.update_agent_run(agent_run, status="running", trace_id=trace_id or agent_run.trace_id)
             self.workflow_repository.update_workflow_run(
                 workflow_run,
                 status="running",
+                trace_id=trace_id or workflow_run.trace_id,
                 started_at=workflow_run.started_at or now,
             )
             output = self._generate_output(
@@ -122,11 +126,13 @@ class ProductContentAgentRunner:
             self.workflow_repository.update_agent_run(
                 agent_run,
                 status="succeeded",
+                trace_id=trace_id or agent_run.trace_id,
                 output_summary=redact_text(output.reasoning),
             )
             self.workflow_repository.update_workflow_run(
                 workflow_run,
                 status="succeeded",
+                trace_id=trace_id or workflow_run.trace_id,
                 output_payload={
                     "draft_id": str(draft.id),
                     "agent_run_id": str(agent_run.id),

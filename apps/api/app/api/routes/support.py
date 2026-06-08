@@ -15,6 +15,7 @@ from app.api.schemas.support import (
     SupportMessageResponse,
     SupportReplyDraftGenerateRequest,
 )
+from app.core.runtime import call_with_optional_trace
 from app.core.responses import success_response
 from app.services.support import SupportService
 
@@ -136,4 +137,14 @@ def generate_support_reply_draft(
     user_context=Depends(get_current_user_context),
     service: SupportService = Depends(get_support_service),
 ):
-    return success_response(request, service.generate_reply_draft(user_context, store_id, conversation_id, payload))
+    return success_response(
+        request,
+        call_with_optional_trace(
+            service.generate_reply_draft,
+            user_context,
+            store_id,
+            conversation_id,
+            payload,
+            trace_id=request.state.request_id,
+        ),
+    )

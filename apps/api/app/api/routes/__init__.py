@@ -8,13 +8,16 @@ from app.api.routes.fraud import router as fraud_router
 from app.api.routes.health import router as health_router
 from app.api.routes.integrations import router as integrations_router
 from app.api.routes.inventory import router as inventory_router
+from app.api.routes.notification_channels import router as notification_channels_router
 from app.api.routes.notifications import router as notifications_router
 from app.api.routes.organizations import router as organizations_router
 from app.api.routes.policies import router as policies_router
+from app.api.routes.pricing import router as pricing_router
 from app.api.routes.shopify_callback import router as shopify_callback_router
 from app.api.routes.stores import router as stores_router
 from app.api.routes.support import router as support_router
 from app.api.routes.users import router as users_router
+from app.api.routes.workflows import router as workflows_router
 
 
 api_router = APIRouter()
@@ -32,4 +35,7 @@ api_router.include_router(support_router, prefix="/stores", tags=["support"])
 api_router.include_router(fraud_router, prefix="/stores", tags=["fraud"])
 api_router.include_router(inventory_router, prefix="/stores", tags=["inventory"])
 api_router.include_router(analytics_router, prefix="/stores", tags=["analytics"])
+api_router.include_router(pricing_router, prefix="/stores", tags=["pricing"])
+api_router.include_router(workflows_router, prefix="/stores", tags=["workflows"])
+api_router.include_router(notification_channels_router, prefix="/stores", tags=["notifications"])
 api_router.include_router(notifications_router, prefix="/notifications", tags=["notifications"])

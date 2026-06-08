@@ -11,3 +11,12 @@ class AnalyticsService:
 
     def get_automation(self, user_context: dict, store_id, date_from=None, date_to=None) -> dict:
         return self.module.get_automation(user_context, store_id, date_from=date_from, date_to=date_to)
+
+    def get_pricing_metrics(self, user_context: dict, store_id, date_from=None, date_to=None) -> dict:
+        return self.module.get_pricing_metrics(user_context, store_id, date_from=date_from, date_to=date_to)
+
+    def get_workflow_metrics(self, user_context: dict, store_id, date_from=None, date_to=None) -> dict:
+        return self.module.get_workflow_metrics(user_context, store_id, date_from=date_from, date_to=date_to)
+
+    def get_notification_metrics(self, user_context: dict, store_id, date_from=None, date_to=None) -> dict:
+        return self.module.get_notification_metrics(user_context, store_id, date_from=date_from, date_to=date_to)

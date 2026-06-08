@@ -5,14 +5,16 @@ from uuid import UUID
 
 from app.core.errors import AppError
 from app.core.redaction import redact_text
+from app.modules.workflows.events import emit_workflow_event
 from app.repositories.models import SyncRun
 
 from .notifications import sync_failure_recipients
 
 
-def execute_sync_run(module, sync_run_id: str) -> None:
+def execute_sync_run(module, sync_run_id: str, trace_id: str | None = None) -> None:
     workflow_repository = module.workflow_repository
     try:
+        deferred_agent_runs: dict[str, list[str]] = {"inventory": [], "fraud": []}
         sync_run = module.db.get(SyncRun, UUID(sync_run_id))
         if sync_run is None or sync_run.status == "succeeded":
             return
@@ -30,10 +32,12 @@ def execute_sync_run(module, sync_run_id: str) -> None:
             trigger_entity_type="sync_run",
             trigger_entity_id=sync_run.id,
             status="running",
+            trace_id=trace_id or sync_run.trace_id,
             input_payload={"sync_run_id": sync_run_id},
             output_payload={},
         )
         sync_run.status = "running"
+        sync_run.trace_id = trace_id or sync_run.trace_id
         sync_run.started_at = datetime.now(timezone.utc)
         module.db.flush()
 
@@ -76,6 +80,20 @@ def execute_sync_run(module, sync_run_id: str) -> None:
             order = module.sync_repository.upsert_order(sync_run.organization_id, sync_run.store_id, order_payload)
             module.sync_repository.replace_order_items(sync_run.organization_id, sync_run.store_id, order.id, order_payload.get("items", []))
             imported["orders"] += 1
+            emit_workflow_event(
+                organization_id=sync_run.organization_id,
+                store_id=sync_run.store_id,
+                trigger_type="order.imported",
+                entity_type="order",
+                entity_id=order.id,
+                trace_id=trace_id or sync_run.trace_id,
+                payload={
+                    "order_id": str(order.id),
+                    "order.total": float(order.total),
+                    "order.risk_score": order.risk_score,
+                    "order.payment_status": order.payment_status,
+                },
+            )
 
         module.sync_repository.archive_missing_products(
             sync_run.organization_id,
@@ -90,7 +108,9 @@ def execute_sync_run(module, sync_run_id: str) -> None:
             "inventory": module.inventory_module.process_sync_run,
         }.items():
             try:
-                post_processing[key] = handler(sync_run)
+                result = handler(sync_run)
+                deferred_agent_runs[key] = result.pop("_agent_run_ids", [])
+                post_processing[key] = result
             except Exception as post_processing_exc:  # noqa: BLE001
                 redacted_message = redact_text(str(post_processing_exc))
                 post_processing[key] = {"error": redacted_message}
@@ -110,6 +130,11 @@ def execute_sync_run(module, sync_run_id: str) -> None:
         sync_run.records_imported = sum(imported.values())
         sync_run.records_failed = 0
         sync_run.entity_counts_json = imported | post_processing
+        sync_run.failure_class = None
+        sync_run.failure_code = None
+        sync_run.last_error_at = None
+        sync_run.next_retry_at = None
+        sync_run.terminal_failed_at = None
         sync_run.completed_at = datetime.now(timezone.utc)
         store.last_successful_sync_at = sync_run.completed_at
         integration.last_successful_sync_at = sync_run.completed_at
@@ -131,6 +156,29 @@ def execute_sync_run(module, sync_run_id: str) -> None:
             metadata_json={"entity_counts": imported, "post_processing": post_processing},
         )
         module.db.commit()
+        if deferred_agent_runs["fraud"]:
+            from app.tasks.fraud import generate_fraud_risk_assessment
+
+            for agent_run_id in deferred_agent_runs["fraud"]:
+                generate_fraud_risk_assessment.delay(agent_run_id, trace_id or sync_run.trace_id)
+        if deferred_agent_runs["inventory"]:
+            from app.tasks.inventory import generate_inventory_reorder_suggestion
+
+            for agent_run_id in deferred_agent_runs["inventory"]:
+                generate_inventory_reorder_suggestion.delay(agent_run_id, trace_id or sync_run.trace_id)
+        emit_workflow_event(
+            organization_id=sync_run.organization_id,
+            store_id=sync_run.store_id,
+            trigger_type="sync.completed",
+            entity_type="sync_run",
+            entity_id=sync_run.id,
+            trace_id=trace_id or sync_run.trace_id,
+            payload={
+                "sync_run_id": sync_run_id,
+                "sync.records_imported": sync_run.records_imported,
+                "sync.records_failed": sync_run.records_failed,
+            },
+        )
     except Exception as exc:  # noqa: BLE001
         module.db.rollback()
         sync_run = module.db.get(SyncRun, UUID(sync_run_id))
@@ -141,6 +189,8 @@ def execute_sync_run(module, sync_run_id: str) -> None:
             sync_run.error_details_json = exc.details if isinstance(exc, AppError) else {
                 "exception_type": exc.__class__.__name__,
             }
+            sync_run.trace_id = trace_id or sync_run.trace_id
+            sync_run.last_error_at = datetime.now(timezone.utc)
             sync_run.completed_at = datetime.now(timezone.utc)
             workflow = workflow_repository.get_workflow_by_key("store_sync_failed")
             workflow_repository.create_workflow_run(
@@ -151,6 +201,7 @@ def execute_sync_run(module, sync_run_id: str) -> None:
                 trigger_entity_type="sync_run",
                 trigger_entity_id=sync_run.id,
                 status="failed",
+                trace_id=trace_id or sync_run.trace_id,
                 input_payload={"sync_run_id": sync_run_id},
                 output_payload={"error": message},
                 error_message=message,

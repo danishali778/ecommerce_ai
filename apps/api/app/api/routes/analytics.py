@@ -48,3 +48,51 @@ def get_analytics_automation(
     service: AnalyticsService = Depends(get_analytics_service),
 ):
     return success_response(request, service.get_automation(user_context, store_id, date_from=date_from, date_to=date_to))
+
+
+@router.get(
+    "/{store_id}/analytics/pricing",
+    response_model=SuccessEnvelope[dict],
+    summary="Get pricing analytics",
+)
+def get_pricing_analytics(
+    store_id: UUID,
+    request: Request,
+    date_from: str | None = Query(default=None),
+    date_to: str | None = Query(default=None),
+    user_context=Depends(get_current_user_context),
+    service: AnalyticsService = Depends(get_analytics_service),
+):
+    return success_response(request, service.get_pricing_metrics(user_context, store_id, date_from=date_from, date_to=date_to))
+
+
+@router.get(
+    "/{store_id}/analytics/workflows",
+    response_model=SuccessEnvelope[dict],
+    summary="Get workflow analytics",
+)
+def get_workflow_analytics(
+    store_id: UUID,
+    request: Request,
+    date_from: str | None = Query(default=None),
+    date_to: str | None = Query(default=None),
+    user_context=Depends(get_current_user_context),
+    service: AnalyticsService = Depends(get_analytics_service),
+):
+    return success_response(request, service.get_workflow_metrics(user_context, store_id, date_from=date_from, date_to=date_to))
+
+
+@router.get(
+    "/{store_id}/analytics/notifications",
+    response_model=SuccessEnvelope[dict],
+    summary="Get notification analytics",
+)
+def get_notification_analytics(
+    store_id: UUID,
+    request: Request,
+    date_from: str | None = Query(default=None),
+    date_to: str | None = Query(default=None),
+    user_context=Depends(get_current_user_context),
+    service: AnalyticsService = Depends(get_analytics_service),
+):
+    return success_response(request, service.get_notification_metrics(user_context, store_id, date_from=date_from, date_to=date_to))

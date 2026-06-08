@@ -67,6 +67,13 @@ class SyncRunSummary(BaseModel):
     records_failed: int
     entity_counts_json: dict
     error_summary: str | None = None
+    trace_id: str | None = None
+    failure_class: str | None = None
+    failure_code: str | None = None
+    last_error_at: str | None = None
+    next_retry_at: str | None = None
+    max_retries: int = 0
+    attempt_count: int = 0
     started_at: str | None = None
     completed_at: str | None = None
     retry_of_sync_run_id: UUID | None = None
@@ -143,6 +150,14 @@ class ApprovalSummary(BaseModel):
     review_notes: str | None = None
     execution_status: str | None = None
     execution_error: str | None = None
+    trace_id: str | None = None
+    failure_class: str | None = None
+    failure_code: str | None = None
+    last_error_at: str | None = None
+    next_retry_at: str | None = None
+    max_retries: int = 0
+    attempt_count: int = 0
+    retry_count: int = 0
     expires_at: str
     created_at: str
     updated_at: str
@@ -157,6 +172,14 @@ class WorkflowRunSummary(BaseModel):
     input_payload: dict | None = None
     output_payload: dict | None = None
     error_message: str | None = None
+    trace_id: str | None = None
+    failure_class: str | None = None
+    failure_code: str | None = None
+    last_error_at: str | None = None
+    next_retry_at: str | None = None
+    max_retries: int = 0
+    attempt_count: int = 0
+    retry_count: int = 0
 
 
 class AgentRunSummary(BaseModel):
@@ -170,6 +193,13 @@ class AgentRunSummary(BaseModel):
     retrieved_context_summary: str | None = None
     output_summary: str | None = None
     error_message: str | None = None
+    trace_id: str | None = None
+    failure_class: str | None = None
+    failure_code: str | None = None
+    last_error_at: str | None = None
+    next_retry_at: str | None = None
+    max_retries: int = 0
+    attempt_count: int = 0
 
 
 class AuditEventSummary(BaseModel):

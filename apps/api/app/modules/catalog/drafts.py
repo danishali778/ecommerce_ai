@@ -4,6 +4,7 @@ from uuid import UUID
 from app.core.authz import require_permission
 from app.core.errors import AppError
 from app.core.permissions import Permission
+from app.modules.workflows.events import emit_workflow_event
 
 from .serializers import serialize_draft
 from .snapshots import snapshot_hash
@@ -18,7 +19,7 @@ def list_drafts(module, user_context: dict, store_id: UUID, product_id: UUID) ->
     return [serialize_draft(draft) for draft in module.catalog_repository.list_drafts(store.organization_id, store.id, product.id)]
 
 
-def generate_draft(module, user_context: dict, store_id: UUID, product_id: UUID, payload) -> dict:
+def generate_draft(module, user_context: dict, store_id: UUID, product_id: UUID, payload, trace_id: str | None = None) -> dict:
     require_permission(user_context, Permission.CATALOG_DRAFT_GENERATE)
     store = module.require_store(user_context, store_id)
     product = module.sync_repository.get_product(store.organization_id, store.id, product_id)
@@ -32,6 +33,7 @@ def generate_draft(module, user_context: dict, store_id: UUID, product_id: UUID,
         generation_targets=payload.generation_targets,
         tone=payload.tone,
         constraints=payload.constraints,
+        trace_id=trace_id,
     )
     result["_enqueue_generation"] = True
     module.db.commit()
@@ -127,6 +129,19 @@ def submit_draft_for_approval(module, user_context: dict, store_id: UUID, produc
             payload_json={"approval_id": str(approval_request.id), "draft_id": str(draft.id)},
             status="unread",
         )
+    emit_workflow_event(
+        organization_id=store.organization_id,
+        store_id=store.id,
+        trigger_type="approval.pending",
+        entity_type="approval_request",
+        entity_id=approval_request.id,
+        payload={
+            "approval_id": str(approval_request.id),
+            "approval.action_type": approval_request.action_type,
+            "approval.entity_type": approval_request.entity_type,
+            "entity_id": str(approval_request.entity_id),
+        },
+    )
     module.db.commit()
     return {
         "approval_id": str(approval_request.id),

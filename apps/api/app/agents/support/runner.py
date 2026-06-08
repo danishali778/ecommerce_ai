@@ -34,6 +34,7 @@ class SupportAgentRunner:
         store_id: UUID,
         user_id: UUID,
         conversation: SupportConversation,
+        trace_id: str | None = None,
     ) -> dict:
         workflow = self.workflow_repository.ensure_system_workflow(
             key="support_reply_draft_generated",
@@ -50,6 +51,7 @@ class SupportAgentRunner:
             trigger_entity_type="support_conversation",
             trigger_entity_id=conversation.id,
             status="queued",
+            trace_id=trace_id,
             input_payload={"conversation_id": str(conversation.id)},
             output_payload={},
         )
@@ -65,6 +67,7 @@ class SupportAgentRunner:
             tool_calls_json=[],
             model_name=self.llm_provider.model,
             status="queued",
+            trace_id=trace_id,
         )
         return {
             "workflow_run_id": str(workflow_run.id),
@@ -72,7 +75,7 @@ class SupportAgentRunner:
             "status": workflow_run.status,
         }
 
-    def execute_generation(self, agent_run_id: str) -> dict | None:
+    def execute_generation(self, agent_run_id: str, trace_id: str | None = None) -> dict | None:
         agent_run = self.db.get(AgentRun, UUID(agent_run_id))
         if agent_run is None:
             return None
@@ -86,10 +89,11 @@ class SupportAgentRunner:
 
         try:
             now = datetime.now(timezone.utc)
-            self.workflow_repository.update_agent_run(agent_run, status="running")
+            self.workflow_repository.update_agent_run(agent_run, status="running", trace_id=trace_id or agent_run.trace_id)
             self.workflow_repository.update_workflow_run(
                 workflow_run,
                 status="running",
+                trace_id=trace_id or workflow_run.trace_id,
                 started_at=workflow_run.started_at or now,
             )
             messages = self.support_repository.list_messages(conversation.organization_id, conversation.store_id, conversation.id)
@@ -170,12 +174,14 @@ class SupportAgentRunner:
             self.workflow_repository.update_agent_run(
                 agent_run,
                 status="succeeded",
+                trace_id=trace_id or agent_run.trace_id,
                 retrieved_context_summary="\n\n".join(chunk["content"] for chunk in retrieved_payload),
                 output_summary=redact_text(output.draft_body),
             )
             self.workflow_repository.update_workflow_run(
                 workflow_run,
                 status="succeeded",
+                trace_id=trace_id or workflow_run.trace_id,
                 output_payload={"support_message_id": str(message.id)},
                 completed_at=datetime.now(timezone.utc),
             )

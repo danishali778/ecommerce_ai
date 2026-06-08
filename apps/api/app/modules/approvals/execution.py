@@ -8,12 +8,38 @@ from .serializers import serialize_approval
 from .snapshots import snapshot_hash
 
 
-def execute_approval(module, approval_id: str) -> dict | None:
+def execute_approval(module, approval_id: str, trace_id: str | None = None) -> dict | None:
     approval = module.db.get(module.approval_model, UUID(approval_id))
     if approval is None or approval.status == "executed":
         return None
     if approval.status != "approved":
         raise AppError(code="conflict", message="Approval is not ready for execution", status_code=409)
+    if approval.action_type == "pricing_recommendation_approval":
+        recommendation = module.db.get(module.pricing_module._recommendation_model(), approval.entity_id)
+        if recommendation is None:
+            raise AppError(code="not_found", message="Pricing recommendation not found", status_code=404)
+        module.pricing_module.mark_recommendation_approved(recommendation.id)
+        module.repository.update_approval(
+            approval,
+            status="executed",
+            execution_status="succeeded",
+            execution_error=None,
+            trace_id=trace_id or approval.trace_id,
+            last_execution_attempt_at=datetime.now(timezone.utc),
+        )
+        module.workflow_repository.create_audit_event(
+            organization_id=approval.organization_id,
+            store_id=approval.store_id,
+            user_id=approval.reviewed_by_user_id,
+            entity_type="approval_request",
+            entity_id=approval.id,
+            action_type="pricing_approved",
+            source_type="celery",
+            outcome="executed",
+            metadata_json={"recommendation_id": str(recommendation.id), "published_to_store": False},
+        )
+        module.db.commit()
+        return serialize_approval(approval)
     draft = module.require_publishable_draft(approval)
     reviewer_id = approval.reviewed_by_user_id
     if snapshot_hash(draft) != approval.source_snapshot_hash:
@@ -22,6 +48,7 @@ def execute_approval(module, approval_id: str) -> dict | None:
             status="cancelled",
             execution_status="cancelled",
             execution_error="Source snapshot changed before execution",
+            trace_id=trace_id or approval.trace_id,
             last_execution_attempt_at=datetime.now(timezone.utc),
         )
         if draft.status != "published":
@@ -59,6 +86,7 @@ def execute_approval(module, approval_id: str) -> dict | None:
             status="execution_failed",
             execution_status="failed",
             execution_error=message,
+            trace_id=trace_id or approval.trace_id,
             last_execution_attempt_at=datetime.now(timezone.utc),
             retry_count=approval.retry_count + 1,
         )
@@ -92,6 +120,7 @@ def execute_approval(module, approval_id: str) -> dict | None:
         status="executed",
         execution_status="succeeded",
         execution_error=None,
+        trace_id=trace_id or approval.trace_id,
         last_execution_attempt_at=datetime.now(timezone.utc),
     )
     module.catalog_repository.update_draft(

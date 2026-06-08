@@ -24,7 +24,7 @@ def get_approval(module, user_context: dict, approval_id: UUID) -> dict:
     return serialize_approval(approval)
 
 
-def approve(module, user_context: dict, approval_id: UUID, review_notes: str | None, idempotency_key: str | None) -> dict:
+def approve(module, user_context: dict, approval_id: UUID, review_notes: str | None, idempotency_key: str | None, trace_id: str | None = None) -> dict:
     require_permission(user_context, Permission.APPROVALS_REVIEW)
     approval = module.require_approval(user_context, approval_id)
     existing_response, _, fingerprint = resolve_idempotent_response(
@@ -38,21 +38,32 @@ def approve(module, user_context: dict, approval_id: UUID, review_notes: str | N
         return existing_response
     if approval.status != "pending":
         raise AppError(code="approval_terminal_state", message="Approval is not pending", status_code=409)
-    draft = module.require_publishable_draft(approval)
-    if snapshot_hash(draft) != approval.source_snapshot_hash:
-        approval = cancel_stale_approval(module, approval, user_context, review_notes)
-        module.db.commit()
-        raise AppError(
-            code="source_snapshot_changed",
-            message="Draft changed after approval request creation",
-            status_code=409,
-            details={"approval_status": approval.status, "execution_error": approval.execution_error},
-        )
+    metadata_json = {}
+    if approval.action_type == "product_content_publish":
+        draft = module.require_publishable_draft(approval)
+        if snapshot_hash(draft) != approval.source_snapshot_hash:
+            approval = cancel_stale_approval(module, approval, user_context, review_notes)
+            module.db.commit()
+            raise AppError(
+                code="source_snapshot_changed",
+                message="Draft changed after approval request creation",
+                status_code=409,
+                details={"approval_status": approval.status, "execution_error": approval.execution_error},
+            )
+        metadata_json = {"draft_id": str(draft.id)}
+    elif approval.action_type == "pricing_recommendation_approval":
+        recommendation = module.db.get(module.pricing_module._recommendation_model(), approval.entity_id)
+        if recommendation is None:
+            raise AppError(code="not_found", message="Pricing recommendation not found", status_code=404)
+        if recommendation.status == "superseded":
+            raise AppError(code="approval_terminal_state", message="Recommendation has been superseded", status_code=409)
+        metadata_json = {"recommendation_id": str(approval.entity_id)}
     module.repository.update_approval(
         approval,
         status="approved",
         execution_status="queued",
         execution_error=None,
+        trace_id=trace_id or approval.trace_id,
         reviewed_by_user_id=UUID(user_context["user"]["id"]),
         reviewed_at=datetime.now(timezone.utc),
         review_notes=review_notes,
@@ -66,10 +77,10 @@ def approve(module, user_context: dict, approval_id: UUID, review_notes: str | N
         action_type="approve",
         source_type="api",
         outcome="queued",
-        metadata_json={"draft_id": str(draft.id)},
+        metadata_json=metadata_json,
     )
     response = serialize_approval(approval)
-    response["_enqueue_publish"] = True
+    response["_enqueue_execution"] = True
     module.idempotency_repository.create_record(
         organization_id=approval.organization_id,
         scope=f"approval:approve:{approval.id}",
@@ -108,6 +119,8 @@ def reject(module, user_context: dict, approval_id: UUID, review_notes: str | No
     draft = module.db.get(ProductContentDraft, approval.entity_id)
     if draft is not None:
         module.catalog_repository.update_draft(draft, status="rejected")
+    elif approval.action_type == "pricing_recommendation_approval":
+        module.pricing_module.mark_recommendation_rejected(approval.entity_id)
     module.workflow_repository.create_audit_event(
         organization_id=approval.organization_id,
         store_id=approval.store_id,
@@ -159,6 +172,8 @@ def cancel(module, user_context: dict, approval_id: UUID, review_notes: str | No
     draft = module.db.get(ProductContentDraft, approval.entity_id)
     if draft is not None and draft.status != "published":
         module.catalog_repository.update_draft(draft, status="draft", submitted_approval_request_id=None)
+    elif approval.action_type == "pricing_recommendation_approval":
+        module.pricing_module.mark_recommendation_rejected(approval.entity_id)
     module.workflow_repository.create_audit_event(
         organization_id=approval.organization_id,
         store_id=approval.store_id,
@@ -184,7 +199,7 @@ def cancel(module, user_context: dict, approval_id: UUID, review_notes: str | No
     return response
 
 
-def retry_execution(module, user_context: dict, approval_id: UUID, review_notes: str | None, idempotency_key: str | None) -> dict:
+def retry_execution(module, user_context: dict, approval_id: UUID, review_notes: str | None, idempotency_key: str | None, trace_id: str | None = None) -> dict:
     require_permission(user_context, Permission.APPROVALS_RETRY_EXECUTION)
     approval = module.require_approval(user_context, approval_id)
     existing_response, _, fingerprint = resolve_idempotent_response(
@@ -198,17 +213,20 @@ def retry_execution(module, user_context: dict, approval_id: UUID, review_notes:
         return existing_response
     if approval.status != "execution_failed":
         raise AppError(code="conflict", message="Only failed executions can be retried", status_code=409)
-    draft = module.require_publishable_draft(approval)
+    draft = None
+    if approval.action_type == "product_content_publish":
+        draft = module.require_publishable_draft(approval)
     module.repository.update_approval(
         approval,
         status="approved",
         execution_status="queued",
         execution_error=None,
+        trace_id=trace_id or approval.trace_id,
         reviewed_by_user_id=UUID(user_context["user"]["id"]),
         reviewed_at=datetime.now(timezone.utc),
         review_notes=review_notes,
     )
-    if draft.status != "published":
+    if draft is not None and draft.status != "published":
         module.catalog_repository.update_draft(draft, status="submitted_for_approval")
     module.workflow_repository.create_audit_event(
         organization_id=approval.organization_id,
@@ -222,7 +240,7 @@ def retry_execution(module, user_context: dict, approval_id: UUID, review_notes:
         metadata_json={},
     )
     response = serialize_approval(approval)
-    response["_enqueue_publish"] = True
+    response["_enqueue_execution"] = True
     module.idempotency_repository.create_record(
         organization_id=approval.organization_id,
         scope=f"approval:retry_execution:{approval.id}",

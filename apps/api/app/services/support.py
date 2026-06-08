@@ -1,4 +1,5 @@
 from app.modules.support import SupportModule
+from app.core.runtime import call_with_optional_trace
 
 
 class SupportService:
@@ -24,17 +25,24 @@ class SupportService:
     def list_messages(self, user_context: dict, store_id, conversation_id) -> list[dict]:
         return self.module.list_messages(user_context, store_id, conversation_id)
 
-    def generate_reply_draft(self, user_context: dict, store_id, conversation_id, payload) -> dict:
-        result = self.module.generate_reply_draft(user_context, store_id, conversation_id, payload)
+    def generate_reply_draft(self, user_context: dict, store_id, conversation_id, payload, trace_id: str | None = None) -> dict:
+        result = call_with_optional_trace(
+            self.module.generate_reply_draft,
+            user_context,
+            store_id,
+            conversation_id,
+            payload,
+            trace_id=trace_id,
+        )
         if result.pop("_enqueue_generation", False):
-            self._enqueue_generation(result["agent_run_id"])
+            call_with_optional_trace(self._enqueue_generation, result["agent_run_id"], trace_id=trace_id)
         return result
 
-    def execute_generation(self, agent_run_id: str) -> None:
-        self.module.agent_runner.execute_generation(agent_run_id)
+    def execute_generation(self, agent_run_id: str, trace_id: str | None = None) -> None:
+        call_with_optional_trace(self.module.agent_runner.execute_generation, agent_run_id, trace_id=trace_id)
 
     @staticmethod
-    def _enqueue_generation(agent_run_id: str) -> None:
+    def _enqueue_generation(agent_run_id: str, trace_id: str | None = None) -> None:
         from app.tasks.support import generate_support_reply_draft
 
-        generate_support_reply_draft.delay(agent_run_id)
+        generate_support_reply_draft.delay(agent_run_id, trace_id)

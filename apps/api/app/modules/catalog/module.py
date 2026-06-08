@@ -36,8 +36,8 @@ class CatalogModule:
     def list_drafts(self, user_context: dict, store_id: UUID, product_id: UUID) -> list[dict]:
         return list_drafts(self, user_context, store_id, product_id)
 
-    def generate_draft(self, user_context: dict, store_id: UUID, product_id: UUID, payload) -> dict:
-        return generate_draft(self, user_context, store_id, product_id, payload)
+    def generate_draft(self, user_context: dict, store_id: UUID, product_id: UUID, payload, trace_id: str | None = None) -> dict:
+        return generate_draft(self, user_context, store_id, product_id, payload, trace_id=trace_id)
 
     def get_draft(self, user_context: dict, store_id: UUID, product_id: UUID, draft_id: UUID) -> dict:
         return get_draft(self, user_context, store_id, product_id, draft_id)

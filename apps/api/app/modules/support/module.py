@@ -179,7 +179,7 @@ class SupportModule:
             raise AppError(code="not_found", message="Support conversation not found", status_code=404)
         return [serialize_message(message) for message in self.support_repository.list_messages(organization_id, store_id, conversation_id)]
 
-    def generate_reply_draft(self, user_context: dict, store_id: UUID, conversation_id: UUID, payload) -> dict:
+    def generate_reply_draft(self, user_context: dict, store_id: UUID, conversation_id: UUID, payload, trace_id: str | None = None) -> dict:
         del payload
         organization_id = self.require_store_access(user_context, store_id)
         require_permission(user_context, Permission.SUPPORT_GENERATE)
@@ -191,6 +191,7 @@ class SupportModule:
             store_id=store_id,
             user_id=UUID(user_context["user"]["id"]),
             conversation=conversation,
+            trace_id=trace_id,
         )
         self.db.commit()
         result["_enqueue_generation"] = True

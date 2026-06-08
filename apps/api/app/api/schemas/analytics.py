@@ -19,6 +19,9 @@ class AnalyticsOverviewSections(BaseModel):
     support: dict = Field(default_factory=dict)
     fraud: dict = Field(default_factory=dict)
     operations: dict = Field(default_factory=dict)
+    pricing: dict = Field(default_factory=dict)
+    workflows: dict = Field(default_factory=dict)
+    notifications: dict = Field(default_factory=dict)
 
 
 class AnalyticsOverviewResponse(BaseModel):
