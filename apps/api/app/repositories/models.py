@@ -169,6 +169,14 @@ class SyncRun(Base):
     error_summary: Mapped[str | None] = mapped_column(Text, nullable=True)
     error_details_json: Mapped[dict[str, Any] | None] = mapped_column(JSON, default=dict, nullable=True)
     retry_of_sync_run_id: Mapped[UUID | None] = mapped_column(PGUUID(as_uuid=True), ForeignKey(f"{SCHEMA}.sync_runs.id"), nullable=True)
+    trace_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    failure_class: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    failure_code: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    last_error_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    next_retry_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    max_retries: Mapped[int] = mapped_column(Integer, default=0)
+    attempt_count: Mapped[int] = mapped_column(Integer, default=0)
+    terminal_failed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
@@ -222,6 +230,96 @@ class ProductVariant(Base, TimestampMixin):
     compare_at_price: Mapped[Decimal | None] = mapped_column(Numeric(14, 4), nullable=True)
     last_sync_run_id: Mapped[UUID | None] = mapped_column(PGUUID(as_uuid=True), ForeignKey(f"{SCHEMA}.sync_runs.id"), nullable=True)
     last_synced_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class PricingRule(Base, TimestampMixin):
+    __tablename__ = "pricing_rules"
+    __table_args__ = (
+        Index("pricing_rules_store_enabled_idx", "store_id", "is_enabled", "updated_at"),
+        {"schema": SCHEMA},
+    )
+
+    id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
+    organization_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), ForeignKey(f"{SCHEMA}.organizations.id"))
+    store_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), ForeignKey(f"{SCHEMA}.stores.id"))
+    product_id: Mapped[UUID | None] = mapped_column(PGUUID(as_uuid=True), ForeignKey(f"{SCHEMA}.products.id"), nullable=True)
+    variant_id: Mapped[UUID | None] = mapped_column(PGUUID(as_uuid=True), ForeignKey(f"{SCHEMA}.product_variants.id"), nullable=True)
+    strategy: Mapped[str] = mapped_column(String(64))
+    delta_amount: Mapped[Decimal | None] = mapped_column(Numeric(14, 4), nullable=True)
+    delta_percentage: Mapped[Decimal | None] = mapped_column(Numeric(8, 4), nullable=True)
+    markup_percentage: Mapped[Decimal | None] = mapped_column(Numeric(8, 4), nullable=True)
+    surge_percentage: Mapped[Decimal | None] = mapped_column(Numeric(8, 4), nullable=True)
+    manual_target_price: Mapped[Decimal | None] = mapped_column(Numeric(14, 4), nullable=True)
+    cost: Mapped[Decimal | None] = mapped_column(Numeric(14, 4), nullable=True)
+    margin_floor: Mapped[Decimal | None] = mapped_column(Numeric(14, 4), nullable=True)
+    price_ceiling: Mapped[Decimal | None] = mapped_column(Numeric(14, 4), nullable=True)
+    approval_threshold_percent: Mapped[Decimal | None] = mapped_column(Numeric(8, 4), nullable=True)
+    force_review: Mapped[bool] = mapped_column(Boolean, default=False)
+    is_enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    version_number: Mapped[int] = mapped_column(Integer, default=1)
+    created_by_user_id: Mapped[UUID | None] = mapped_column(PGUUID(as_uuid=True), ForeignKey(f"{SCHEMA}.users.id"), nullable=True)
+    updated_by_user_id: Mapped[UUID | None] = mapped_column(PGUUID(as_uuid=True), ForeignKey(f"{SCHEMA}.users.id"), nullable=True)
+
+
+class PriceReferenceInput(Base, TimestampMixin):
+    __tablename__ = "price_reference_inputs"
+    __table_args__ = (
+        Index("price_reference_inputs_store_source_idx", "store_id", "source_type", "created_at"),
+        {"schema": SCHEMA},
+    )
+
+    id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
+    organization_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), ForeignKey(f"{SCHEMA}.organizations.id"))
+    store_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), ForeignKey(f"{SCHEMA}.stores.id"))
+    pricing_rule_id: Mapped[UUID | None] = mapped_column(PGUUID(as_uuid=True), ForeignKey(f"{SCHEMA}.pricing_rules.id"), nullable=True)
+    product_id: Mapped[UUID | None] = mapped_column(PGUUID(as_uuid=True), ForeignKey(f"{SCHEMA}.products.id"), nullable=True)
+    variant_id: Mapped[UUID | None] = mapped_column(PGUUID(as_uuid=True), ForeignKey(f"{SCHEMA}.product_variants.id"), nullable=True)
+    source_type: Mapped[str] = mapped_column(String(32), default="manual")
+    reference_label: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    import_batch_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    reference_price: Mapped[Decimal | None] = mapped_column(Numeric(14, 4), nullable=True)
+    cost_override: Mapped[Decimal | None] = mapped_column(Numeric(14, 4), nullable=True)
+    margin_floor_override: Mapped[Decimal | None] = mapped_column(Numeric(14, 4), nullable=True)
+    price_ceiling_override: Mapped[Decimal | None] = mapped_column(Numeric(14, 4), nullable=True)
+    payload_json: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    created_by_user_id: Mapped[UUID | None] = mapped_column(PGUUID(as_uuid=True), ForeignKey(f"{SCHEMA}.users.id"), nullable=True)
+
+
+class PriceRecommendation(Base, TimestampMixin):
+    __tablename__ = "price_recommendations"
+    __table_args__ = (
+        Index("price_recommendations_store_status_idx", "store_id", "status", "created_at"),
+        {"schema": SCHEMA},
+    )
+
+    id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
+    organization_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), ForeignKey(f"{SCHEMA}.organizations.id"))
+    store_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), ForeignKey(f"{SCHEMA}.stores.id"))
+    pricing_rule_id: Mapped[UUID | None] = mapped_column(PGUUID(as_uuid=True), ForeignKey(f"{SCHEMA}.pricing_rules.id"), nullable=True)
+    reference_input_id: Mapped[UUID | None] = mapped_column(PGUUID(as_uuid=True), ForeignKey(f"{SCHEMA}.price_reference_inputs.id"), nullable=True)
+    product_id: Mapped[UUID | None] = mapped_column(PGUUID(as_uuid=True), ForeignKey(f"{SCHEMA}.products.id"), nullable=True)
+    variant_id: Mapped[UUID | None] = mapped_column(PGUUID(as_uuid=True), ForeignKey(f"{SCHEMA}.product_variants.id"), nullable=True)
+    workflow_run_id: Mapped[UUID | None] = mapped_column(PGUUID(as_uuid=True), ForeignKey(f"{SCHEMA}.workflow_runs.id"), nullable=True)
+    agent_run_id: Mapped[UUID | None] = mapped_column(PGUUID(as_uuid=True), ForeignKey(f"{SCHEMA}.agent_runs.id"), nullable=True)
+    approval_request_id: Mapped[UUID | None] = mapped_column(PGUUID(as_uuid=True), ForeignKey(f"{SCHEMA}.approval_requests.id"), nullable=True)
+    superseded_by_recommendation_id: Mapped[UUID | None] = mapped_column(PGUUID(as_uuid=True), ForeignKey(f"{SCHEMA}.price_recommendations.id"), nullable=True)
+    current_price: Mapped[Decimal | None] = mapped_column(Numeric(14, 4), nullable=True)
+    recommended_price: Mapped[Decimal | None] = mapped_column(Numeric(14, 4), nullable=True)
+    cost_snapshot: Mapped[Decimal | None] = mapped_column(Numeric(14, 4), nullable=True)
+    margin_floor_snapshot: Mapped[Decimal | None] = mapped_column(Numeric(14, 4), nullable=True)
+    price_ceiling_snapshot: Mapped[Decimal | None] = mapped_column(Numeric(14, 4), nullable=True)
+    reference_price_snapshot: Mapped[Decimal | None] = mapped_column(Numeric(14, 4), nullable=True)
+    applied_strategy: Mapped[str] = mapped_column(String(64))
+    validation_status: Mapped[str] = mapped_column(String(64), default="valid")
+    status: Mapped[str] = mapped_column(String(64), default="draft")
+    requires_approval: Mapped[bool] = mapped_column(Boolean, default=False)
+    explanation_json: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    explanation_summary: Mapped[str | None] = mapped_column(Text, nullable=True)
+    strategy_inputs_json: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    confidence_score: Mapped[Decimal | None] = mapped_column(Numeric(5, 4), nullable=True)
+    needs_human_review: Mapped[bool] = mapped_column(Boolean, default=False)
+    review_reason_code: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    created_by_user_id: Mapped[UUID | None] = mapped_column(PGUUID(as_uuid=True), ForeignKey(f"{SCHEMA}.users.id"), nullable=True)
 
 
 class Customer(Base, TimestampMixin):
@@ -300,15 +398,22 @@ class Workflow(Base, TimestampMixin):
 
     id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
     organization_id: Mapped[UUID | None] = mapped_column(PGUUID(as_uuid=True), ForeignKey(f"{SCHEMA}.organizations.id"), nullable=True)
+    store_id: Mapped[UUID | None] = mapped_column(PGUUID(as_uuid=True), ForeignKey(f"{SCHEMA}.stores.id"), nullable=True)
     name: Mapped[str] = mapped_column(String(255))
     key: Mapped[str] = mapped_column(String(255), unique=True)
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
     phase_scope: Mapped[str] = mapped_column(String(32))
     trigger_type: Mapped[str] = mapped_column(String(100))
     condition_json: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
     action_type: Mapped[str] = mapped_column(String(100))
+    condition_groups_json: Mapped[list[dict[str, Any]]] = mapped_column(JSON, default=list)
+    actions_json: Mapped[list[dict[str, Any]]] = mapped_column(JSON, default=list)
     approval_required: Mapped[bool] = mapped_column(Boolean, default=False)
     is_system_defined: Mapped[bool] = mapped_column(Boolean, default=True)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    version_number: Mapped[int] = mapped_column(Integer, default=1)
+    created_by_user_id: Mapped[UUID | None] = mapped_column(PGUUID(as_uuid=True), ForeignKey(f"{SCHEMA}.users.id"), nullable=True)
+    updated_by_user_id: Mapped[UUID | None] = mapped_column(PGUUID(as_uuid=True), ForeignKey(f"{SCHEMA}.users.id"), nullable=True)
 
 
 class WorkflowRun(Base):
@@ -326,6 +431,14 @@ class WorkflowRun(Base):
     input_payload: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
     output_payload: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
     error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+    trace_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    failure_class: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    failure_code: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    last_error_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    next_retry_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    max_retries: Mapped[int] = mapped_column(Integer, default=0)
+    attempt_count: Mapped[int] = mapped_column(Integer, default=0)
+    terminal_failed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     retry_count: Mapped[int] = mapped_column(Integer, default=0)
     started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
@@ -374,6 +487,14 @@ class AgentRun(Base):
     token_usage_output: Mapped[int | None] = mapped_column(Integer, nullable=True)
     status: Mapped[str] = mapped_column(String(64), default="queued")
     error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+    trace_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    failure_class: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    failure_code: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    last_error_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    next_retry_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    max_retries: Mapped[int] = mapped_column(Integer, default=0)
+    attempt_count: Mapped[int] = mapped_column(Integer, default=0)
+    terminal_failed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 
@@ -403,6 +524,14 @@ class ApprovalRequest(Base, TimestampMixin):
     reviewed_by_user_id: Mapped[UUID | None] = mapped_column(PGUUID(as_uuid=True), ForeignKey(f"{SCHEMA}.users.id"), nullable=True)
     reviewed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     last_execution_attempt_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    trace_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    failure_class: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    failure_code: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    last_error_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    next_retry_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    max_retries: Mapped[int] = mapped_column(Integer, default=0)
+    attempt_count: Mapped[int] = mapped_column(Integer, default=0)
+    terminal_failed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     retry_count: Mapped[int] = mapped_column(Integer, default=0)
 
 
@@ -438,6 +567,100 @@ class Notification(Base):
     payload_json: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
     status: Mapped[str] = mapped_column(String(50), default="unread")
     read_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class NotificationChannel(Base, TimestampMixin):
+    __tablename__ = "notification_channels"
+    __table_args__ = (
+        Index("notification_channels_store_type_idx", "store_id", "channel_type", "is_enabled"),
+        {"schema": SCHEMA},
+    )
+
+    id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
+    organization_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), ForeignKey(f"{SCHEMA}.organizations.id"))
+    store_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), ForeignKey(f"{SCHEMA}.stores.id"))
+    name: Mapped[str] = mapped_column(String(255))
+    channel_type: Mapped[str] = mapped_column(String(32))
+    status: Mapped[str] = mapped_column(String(32), default="connected")
+    is_enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    metadata_json: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    secret_reference: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    last_test_status: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    last_test_error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    last_tested_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_by_user_id: Mapped[UUID | None] = mapped_column(PGUUID(as_uuid=True), ForeignKey(f"{SCHEMA}.users.id"), nullable=True)
+    updated_by_user_id: Mapped[UUID | None] = mapped_column(PGUUID(as_uuid=True), ForeignKey(f"{SCHEMA}.users.id"), nullable=True)
+
+
+class NotificationPreference(Base, TimestampMixin):
+    __tablename__ = "notification_preferences"
+    __table_args__ = (
+        UniqueConstraint("channel_id", "event_type", name="notification_preferences_channel_event_uidx"),
+        {"schema": SCHEMA},
+    )
+
+    id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
+    organization_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), ForeignKey(f"{SCHEMA}.organizations.id"))
+    store_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), ForeignKey(f"{SCHEMA}.stores.id"))
+    channel_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), ForeignKey(f"{SCHEMA}.notification_channels.id"))
+    event_type: Mapped[str] = mapped_column(String(64))
+    is_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
+
+
+class NotificationDelivery(Base):
+    __tablename__ = "notification_deliveries"
+    __table_args__ = (
+        Index("notification_deliveries_store_status_idx", "store_id", "status", "created_at"),
+        {"schema": SCHEMA},
+    )
+
+    id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
+    organization_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), ForeignKey(f"{SCHEMA}.organizations.id"))
+    store_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), ForeignKey(f"{SCHEMA}.stores.id"))
+    notification_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), ForeignKey(f"{SCHEMA}.notifications.id"))
+    channel_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), ForeignKey(f"{SCHEMA}.notification_channels.id"))
+    event_type: Mapped[str] = mapped_column(String(64))
+    status: Mapped[str] = mapped_column(String(32), default="queued")
+    rendered_payload_json: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    response_payload_json: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    trace_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    failure_class: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    failure_code: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    last_error_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    next_retry_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    max_retries: Mapped[int] = mapped_column(Integer, default=0)
+    terminal_failed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    attempt_count: Mapped[int] = mapped_column(Integer, default=0)
+    queued_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    last_attempted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class JobAttempt(Base):
+    __tablename__ = "job_attempts"
+    __table_args__ = (
+        Index("job_attempts_subject_created_idx", "subject_type", "subject_id", "created_at"),
+        {"schema": SCHEMA},
+    )
+
+    id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
+    organization_id: Mapped[UUID | None] = mapped_column(PGUUID(as_uuid=True), ForeignKey(f"{SCHEMA}.organizations.id"), nullable=True)
+    store_id: Mapped[UUID | None] = mapped_column(PGUUID(as_uuid=True), ForeignKey(f"{SCHEMA}.stores.id"), nullable=True)
+    subject_type: Mapped[str] = mapped_column(String(64))
+    subject_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True))
+    attempt_number: Mapped[int] = mapped_column(Integer, default=1)
+    status: Mapped[str] = mapped_column(String(32), default="running")
+    failure_class: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    failure_code: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+    trace_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    scheduled_retry_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    duration_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 
@@ -556,10 +779,16 @@ class ReorderSuggestion(Base, TimestampMixin):
     inventory_alert_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), ForeignKey(f"{SCHEMA}.inventory_alerts.id"))
     product_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), ForeignKey(f"{SCHEMA}.products.id"))
     variant_id: Mapped[UUID | None] = mapped_column(PGUUID(as_uuid=True), ForeignKey(f"{SCHEMA}.product_variants.id"), nullable=True)
+    agent_run_id: Mapped[UUID | None] = mapped_column(PGUUID(as_uuid=True), ForeignKey(f"{SCHEMA}.agent_runs.id"), nullable=True)
     recommended_quantity: Mapped[int] = mapped_column(Integer)
     current_quantity: Mapped[int] = mapped_column(Integer)
     threshold_value: Mapped[int] = mapped_column(Integer)
     rationale_json: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    rationale_summary: Mapped[str | None] = mapped_column(Text, nullable=True)
+    urgency: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    confidence_score: Mapped[Decimal | None] = mapped_column(Numeric(5, 4), nullable=True)
+    needs_human_review: Mapped[bool] = mapped_column(Boolean, default=False)
+    review_reason_code: Mapped[str | None] = mapped_column(String(100), nullable=True)
     status: Mapped[str] = mapped_column(String(50), default="open")
 
 
@@ -594,9 +823,16 @@ class RiskReview(Base, TimestampMixin):
     organization_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), ForeignKey(f"{SCHEMA}.organizations.id"))
     store_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), ForeignKey(f"{SCHEMA}.stores.id"))
     order_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), ForeignKey(f"{SCHEMA}.orders.id"))
+    agent_run_id: Mapped[UUID | None] = mapped_column(PGUUID(as_uuid=True), ForeignKey(f"{SCHEMA}.agent_runs.id"), nullable=True)
     risk_score: Mapped[int] = mapped_column(Integer)
     risk_status: Mapped[str] = mapped_column(String(50), default="pending_review")
     reason_codes_json: Mapped[list[str]] = mapped_column(JSON, default=list)
+    explanation_json: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    explanation_summary: Mapped[str | None] = mapped_column(Text, nullable=True)
+    confidence_score: Mapped[Decimal | None] = mapped_column(Numeric(5, 4), nullable=True)
+    needs_human_review: Mapped[bool] = mapped_column(Boolean, default=False)
+    review_reason_code: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    recommended_decision: Mapped[str | None] = mapped_column(String(50), nullable=True)
     decision: Mapped[str | None] = mapped_column(String(50), nullable=True)
     decision_notes: Mapped[str | None] = mapped_column(Text, nullable=True)
     reviewed_by_user_id: Mapped[UUID | None] = mapped_column(PGUUID(as_uuid=True), ForeignKey(f"{SCHEMA}.users.id"), nullable=True)

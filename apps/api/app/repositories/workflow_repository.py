@@ -1,6 +1,6 @@
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import or_, select
 
 from app.repositories.base import Repository
 from app.repositories.models import AgentRun, AuditEvent, Notification, Workflow, WorkflowRun
@@ -9,6 +9,75 @@ from app.repositories.models import AgentRun, AuditEvent, Notification, Workflow
 class WorkflowRepository(Repository):
     def get_workflow_by_key(self, key: str) -> Workflow | None:
         return self.db.scalar(select(Workflow).where(Workflow.key == key))
+
+    def list_workflows(self, organization_id: UUID, store_id: UUID) -> list[Workflow]:
+        query = (
+            select(Workflow)
+            .where(
+                or_(
+                    Workflow.organization_id.is_(None),
+                    Workflow.organization_id == organization_id,
+                ),
+                or_(Workflow.store_id.is_(None), Workflow.store_id == store_id),
+            )
+            .order_by(Workflow.is_system_defined.desc(), Workflow.updated_at.desc())
+        )
+        return list(self.db.scalars(query))
+
+    def list_user_workflows(self, organization_id: UUID, store_id: UUID, *, trigger_type: str | None = None, is_active: bool | None = None) -> list[Workflow]:
+        query = (
+            select(Workflow)
+            .where(
+                Workflow.organization_id == organization_id,
+                Workflow.store_id == store_id,
+                Workflow.is_system_defined.is_(False),
+            )
+            .order_by(Workflow.updated_at.desc())
+        )
+        if trigger_type:
+            query = query.where(Workflow.trigger_type == trigger_type)
+        if is_active is not None:
+            query = query.where(Workflow.is_active.is_(is_active))
+        return list(self.db.scalars(query))
+
+    def list_enabled_workflows_for_trigger(self, organization_id: UUID, store_id: UUID, trigger_type: str) -> list[Workflow]:
+        query = (
+            select(Workflow)
+            .where(
+                Workflow.organization_id == organization_id,
+                Workflow.store_id == store_id,
+                Workflow.is_system_defined.is_(False),
+                Workflow.is_active.is_(True),
+                Workflow.trigger_type == trigger_type,
+            )
+            .order_by(Workflow.updated_at.desc())
+        )
+        return list(self.db.scalars(query))
+
+    def get_workflow(self, organization_id: UUID, store_id: UUID, workflow_id: UUID) -> Workflow | None:
+        return self.db.scalar(
+            select(Workflow).where(
+                Workflow.organization_id == organization_id,
+                Workflow.store_id == store_id,
+                Workflow.id == workflow_id,
+            )
+        )
+
+    def create_workflow(self, **values) -> Workflow:
+        workflow = Workflow(**values)
+        self.db.add(workflow)
+        self.db.flush()
+        return workflow
+
+    def update_workflow(self, workflow: Workflow, **values) -> Workflow:
+        for key, value in values.items():
+            setattr(workflow, key, value)
+        self.db.flush()
+        return workflow
+
+    def delete_workflow(self, workflow: Workflow) -> None:
+        self.db.delete(workflow)
+        self.db.flush()
 
     def ensure_system_workflow(
         self,
@@ -33,9 +102,12 @@ class WorkflowRepository(Repository):
             trigger_type=trigger_type,
             condition_json=condition_json or {},
             action_type=action_type,
+            condition_groups_json=[],
+            actions_json=[{"type": action_type, "params": {}}],
             approval_required=approval_required,
             is_system_defined=True,
             is_active=is_active,
+            version_number=1,
         )
         self.db.add(workflow)
         self.db.flush()

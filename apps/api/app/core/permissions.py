@@ -8,6 +8,10 @@ class Permission:
     USERS_MANAGE = "users.manage"
     STORES_MANAGE = "stores.manage"
     INTEGRATIONS_MANAGE = "integrations.manage"
+    WORKFLOWS_READ = "workflows.read"
+    WORKFLOWS_MANAGE = "workflows.manage"
+    PRICING_READ = "pricing.read"
+    PRICING_MANAGE = "pricing.manage"
     SYNC_READ = "sync.read"
     SYNC_TRIGGER = "sync.trigger"
     CATALOG_READ = "catalog.read"
@@ -21,6 +25,7 @@ class Permission:
     LOGS_READ = "logs.read"
     NOTIFICATIONS_READ = "notifications.read"
     NOTIFICATIONS_UPDATE = "notifications.update"
+    NOTIFICATIONS_MANAGE = "notifications.manage"
     SUPPORT_READ = "support.read"
     SUPPORT_WRITE = "support.write"
     SUPPORT_GENERATE = "support.generate"
@@ -38,6 +43,10 @@ ALL_PERMISSIONS = [
     Permission.USERS_MANAGE,
     Permission.STORES_MANAGE,
     Permission.INTEGRATIONS_MANAGE,
+    Permission.WORKFLOWS_READ,
+    Permission.WORKFLOWS_MANAGE,
+    Permission.PRICING_READ,
+    Permission.PRICING_MANAGE,
     Permission.SYNC_READ,
     Permission.SYNC_TRIGGER,
     Permission.CATALOG_READ,
@@ -51,6 +60,7 @@ ALL_PERMISSIONS = [
     Permission.LOGS_READ,
     Permission.NOTIFICATIONS_READ,
     Permission.NOTIFICATIONS_UPDATE,
+    Permission.NOTIFICATIONS_MANAGE,
     Permission.SUPPORT_READ,
     Permission.SUPPORT_WRITE,
     Permission.SUPPORT_GENERATE,
@@ -68,6 +78,10 @@ ROLE_PERMISSION_MAP: dict[str, list[str]] = {
     "Owner": ALL_PERMISSIONS,
     "Admin": ALL_PERMISSIONS,
     "Manager": [
+        Permission.WORKFLOWS_READ,
+        Permission.WORKFLOWS_MANAGE,
+        Permission.PRICING_READ,
+        Permission.PRICING_MANAGE,
         Permission.SYNC_READ,
         Permission.SYNC_TRIGGER,
         Permission.CATALOG_READ,
@@ -81,6 +95,7 @@ ROLE_PERMISSION_MAP: dict[str, list[str]] = {
         Permission.LOGS_READ,
         Permission.NOTIFICATIONS_READ,
         Permission.NOTIFICATIONS_UPDATE,
+        Permission.NOTIFICATIONS_MANAGE,
         Permission.SUPPORT_READ,
         Permission.SUPPORT_WRITE,
         Permission.SUPPORT_GENERATE,
@@ -94,6 +109,7 @@ ROLE_PERMISSION_MAP: dict[str, list[str]] = {
     ],
     "Marketing User": [
         Permission.CATALOG_READ,
+        Permission.PRICING_READ,
         Permission.CATALOG_DRAFT_GENERATE,
         Permission.CATALOG_DRAFT_EDIT,
         Permission.CATALOG_DRAFT_SUBMIT,
@@ -101,15 +117,18 @@ ROLE_PERMISSION_MAP: dict[str, list[str]] = {
         Permission.LOGS_READ,
         Permission.NOTIFICATIONS_READ,
         Permission.NOTIFICATIONS_UPDATE,
+        Permission.WORKFLOWS_READ,
         Permission.POLICIES_READ,
         Permission.ANALYTICS_READ,
     ],
     "Support Agent": [
         Permission.CATALOG_READ,
+        Permission.PRICING_READ,
         Permission.SYNC_READ,
         Permission.LOGS_READ,
         Permission.NOTIFICATIONS_READ,
         Permission.NOTIFICATIONS_UPDATE,
+        Permission.WORKFLOWS_READ,
         Permission.SUPPORT_READ,
         Permission.SUPPORT_WRITE,
         Permission.SUPPORT_GENERATE,
@@ -119,9 +138,11 @@ ROLE_PERMISSION_MAP: dict[str, list[str]] = {
     ],
     "Viewer": [
         Permission.CATALOG_READ,
+        Permission.PRICING_READ,
         Permission.SYNC_READ,
         Permission.LOGS_READ,
         Permission.NOTIFICATIONS_READ,
+        Permission.WORKFLOWS_READ,
         Permission.POLICIES_READ,
         Permission.INVENTORY_READ,
         Permission.FRAUD_READ,
