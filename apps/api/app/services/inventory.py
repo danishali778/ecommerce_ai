@@ -1,4 +1,5 @@
 from app.modules.inventory import InventoryModule
+from app.core.runtime import call_with_optional_trace
 
 
 class InventoryService:
@@ -17,3 +18,6 @@ class InventoryService:
 
     def create_or_refresh_supplier_draft(self, user_context: dict, store_id, suggestion_id, payload) -> dict:
         return self.module.create_or_refresh_supplier_draft(user_context, store_id, suggestion_id, payload)
+
+    def execute_generation(self, agent_run_id: str, trace_id: str | None = None) -> None:
+        call_with_optional_trace(self.module.agent_runner.execute_generation, agent_run_id, trace_id=trace_id)

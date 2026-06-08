@@ -1,10 +1,10 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
-from decimal import Decimal
 from typing import Any
 from uuid import UUID
 
+from app.agents.fraud_risk.runner import FraudRiskAgentRunner
 from app.core.authz import require_any_permission, require_permission
 from app.core.errors import AppError
 from app.core.permissions import Permission
@@ -18,9 +18,16 @@ def serialize_risk_review(review) -> dict[str, Any]:
     return {
         "id": str(review.id),
         "order_id": str(review.order_id),
+        "agent_run_id": str(review.agent_run_id) if review.agent_run_id else None,
         "risk_score": review.risk_score,
         "risk_status": review.risk_status,
         "reason_codes_json": review.reason_codes_json,
+        "explanation_json": review.explanation_json,
+        "explanation_summary": review.explanation_summary,
+        "confidence_score": float(review.confidence_score) if review.confidence_score is not None else None,
+        "needs_human_review": review.needs_human_review,
+        "review_reason_code": review.review_reason_code,
+        "recommended_decision": review.recommended_decision,
         "decision": review.decision,
         "decision_notes": review.decision_notes,
         "reviewed_by_user_id": str(review.reviewed_by_user_id) if review.reviewed_by_user_id else None,
@@ -37,6 +44,7 @@ class FraudModule:
         self.sync_repository = SyncRepository(db)
         self.fraud_repository = FraudRepository(db)
         self.workflow_repository = WorkflowRepository(db)
+        self.agent_runner = FraudRiskAgentRunner(db)
 
     def get_order_risk_score(self, user_context: dict, store_id: UUID, order_id: UUID) -> dict:
         organization_id = self.require_store_access(user_context, store_id)
@@ -98,97 +106,20 @@ class FraudModule:
         return serialize_risk_review(review)
 
     def process_sync_run(self, sync_run) -> dict[str, int]:
-        reviews_created = 0
-        orders_scored = 0
+        agent_runs_queued = 0
+        agent_run_ids: list[str] = []
         for order in self.sync_repository.list_orders_for_sync_run(sync_run.id):
-            customer = (
-                self.sync_repository.get_customer(order.organization_id, order.store_id, order.customer_id)
-                if order.customer_id
-                else None
+            run_state = self.agent_runner.start_generation(
+                organization_id=order.organization_id,
+                store_id=order.store_id,
+                order=order,
+                triggered_by_user_id=sync_run.triggered_by_user_id,
+                trace_id=getattr(sync_run, "trace_id", None),
             )
-            score, status, reasons = self._score_order(order, customer)
-            order.risk_score = score
-            order.risk_status = status
-            orders_scored += 1
-            if status == "high_risk":
-                review = self.fraud_repository.get_pending_review_for_order(order.id)
-                if review is None:
-                    self.fraud_repository.create_review(
-                        organization_id=order.organization_id,
-                        store_id=order.store_id,
-                        order_id=order.id,
-                        risk_score=score,
-                        risk_status="pending_review",
-                        reason_codes_json=reasons,
-                        decision=None,
-                        decision_notes=None,
-                    )
-                    reviews_created += 1
-                    self.workflow_repository.create_audit_event(
-                        organization_id=order.organization_id,
-                        store_id=order.store_id,
-                        user_id=sync_run.triggered_by_user_id,
-                        entity_type="risk_review",
-                        entity_id=order.id,
-                        action_type="created",
-                        source_type="sync",
-                        outcome="queued",
-                        metadata_json={"reasons": reasons, "risk_score": score},
-                    )
+            agent_runs_queued += 1
+            agent_run_ids.append(run_state["agent_run_id"])
         self.db.flush()
-        return {"orders_scored": orders_scored, "risk_reviews_created": reviews_created}
-
-    def _score_order(self, order, customer) -> tuple[int, str, list[str]]:
-        score = 0
-        reasons: list[str] = []
-        customer_total_orders = self._as_int(customer.total_orders if customer else 0)
-        order_total = self._as_decimal(order.total)
-        payment_attempt_count = self._as_int(order.payment_attempt_count)
-        if order.billing_country and order.shipping_country and order.billing_country != order.shipping_country:
-            score += 25
-            reasons.append("billing_shipping_country_mismatch")
-        if order.billing_postal_code and order.shipping_postal_code and order.billing_postal_code != order.shipping_postal_code:
-            score += 20
-            reasons.append("billing_shipping_postal_mismatch")
-        if customer_total_orders <= 1 and order_total >= Decimal("250"):
-            score += 30
-            reasons.append("high_value_first_order")
-        if payment_attempt_count >= 3:
-            score += 15
-            reasons.append("elevated_payment_attempt_count")
-        if customer and customer_total_orders <= 2 and order_total >= Decimal("150"):
-            score += 20
-            reasons.append("low_history_high_total")
-
-        if score >= 60:
-            return score, "high_risk", reasons
-        if score >= 30:
-            return score, "medium_risk", reasons
-        return score, "low_risk", reasons
-
-    @staticmethod
-    def _as_int(value) -> int:
-        if value is None:
-            return 0
-        if isinstance(value, bool):
-            return int(value)
-        if isinstance(value, int):
-            return value
-        try:
-            return int(str(value).strip())
-        except (TypeError, ValueError):
-            return 0
-
-    @staticmethod
-    def _as_decimal(value) -> Decimal:
-        if value is None:
-            return Decimal("0")
-        if isinstance(value, Decimal):
-            return value
-        try:
-            return Decimal(str(value).strip())
-        except Exception:  # noqa: BLE001
-            return Decimal("0")
+        return {"orders_risk_assessments_queued": agent_runs_queued, "_agent_run_ids": agent_run_ids}
 
     def require_store_access(self, user_context: dict, store_id: UUID) -> UUID:
         organization = user_context.get("organization")

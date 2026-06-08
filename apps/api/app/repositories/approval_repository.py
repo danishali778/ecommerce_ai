@@ -7,6 +7,12 @@ from app.repositories.models import ApprovalRequest
 
 
 class ApprovalRepository(Repository):
+    def create_approval(self, **values) -> ApprovalRequest:
+        approval_request = ApprovalRequest(**values)
+        self.db.add(approval_request)
+        self.db.flush()
+        return approval_request
+
     def list_approvals(self, organization_id: UUID) -> list[ApprovalRequest]:
         return list(
             self.db.scalars(
