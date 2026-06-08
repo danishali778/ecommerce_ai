@@ -1,26 +1,17 @@
-from types import SimpleNamespace
+import pytest
 
-from app.modules.fraud import FraudModule
+from app.agents.fraud_risk.runner import FraudRiskAgentRunner
+from app.core.errors import AppError
 
 
-def test_score_order_coerces_string_numeric_fields():
-    module = FraudModule.__new__(FraudModule)
-    order = SimpleNamespace(
-        billing_country="CA",
-        shipping_country="US",
-        billing_postal_code="A1A1A1",
-        shipping_postal_code="B2B2B2",
-        total="300.50",
-        payment_attempt_count="3",
-    )
-    customer = SimpleNamespace(total_orders="1")
+def test_fraud_agent_validator_accepts_supported_risk_statuses():
+    assert FraudRiskAgentRunner._validated_risk_status("low_risk") == "low_risk"
+    assert FraudRiskAgentRunner._validated_risk_status("medium_risk") == "medium_risk"
+    assert FraudRiskAgentRunner._validated_risk_status("high_risk") == "high_risk"
 
-    score, status, reasons = FraudModule._score_order(module, order, customer)
 
-    assert score == 110
-    assert status == "high_risk"
-    assert "billing_shipping_country_mismatch" in reasons
-    assert "billing_shipping_postal_mismatch" in reasons
-    assert "high_value_first_order" in reasons
-    assert "elevated_payment_attempt_count" in reasons
-    assert "low_history_high_total" in reasons
+def test_fraud_agent_validator_rejects_unknown_status():
+    with pytest.raises(AppError) as exc_info:
+        FraudRiskAgentRunner._validated_risk_status("critical")
+
+    assert exc_info.value.code == "validation_error"

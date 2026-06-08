@@ -42,10 +42,16 @@ class ReorderSuggestionResponse(BaseModel):
     inventory_alert_id: UUID
     product_id: UUID
     variant_id: UUID | None = None
+    agent_run_id: UUID | None = None
     recommended_quantity: int
     current_quantity: int
     threshold_value: int
     rationale_json: dict = Field(default_factory=dict)
+    rationale_summary: str | None = None
+    urgency: str | None = None
+    confidence_score: float | None = None
+    needs_human_review: bool = False
+    review_reason_code: str | None = None
     status: str
     created_at: str
     updated_at: str

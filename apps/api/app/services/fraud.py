@@ -1,4 +1,5 @@
 from app.modules.fraud import FraudModule
+from app.core.runtime import call_with_optional_trace
 
 
 class FraudService:
@@ -17,3 +18,6 @@ class FraudService:
 
     def record_decision(self, user_context: dict, store_id, review_id, payload) -> dict:
         return self.module.record_decision(user_context, store_id, review_id, payload)
+
+    def execute_generation(self, agent_run_id: str, trace_id: str | None = None) -> None:
+        call_with_optional_trace(self.module.agent_runner.execute_generation, agent_run_id, trace_id=trace_id)
