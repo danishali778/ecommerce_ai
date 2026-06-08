@@ -77,14 +77,28 @@ erDiagram
 
 ```mermaid
 erDiagram
+    agent_runs ||--o{ risk_reviews : explains
+    agent_runs ||--o{ reorder_suggestions : generates
     orders ||--o{ risk_reviews : reviewed
     product_variants ||--o{ inventory_alerts : triggers
     inventory_alerts ||--o{ reorder_suggestions : creates
     reorder_suggestions ||--o{ supplier_reorder_drafts : drafts
 ```
 
-- Fraud uses stored order risk plus optional review records.
-- Inventory uses alerts, suggestions, and supplier drafts as operator artifacts.
+- Fraud uses stored order risk plus agent-linked review records.
+- Inventory uses alerts, agent-linked suggestions, and supplier drafts as operator artifacts.
+
+## Pricing Recommendation Model
+
+```mermaid
+erDiagram
+    agent_runs ||--o{ price_recommendations : generates
+    price_reference_inputs ||--o{ price_recommendations : informs
+    pricing_rules ||--o{ price_recommendations : governs
+```
+
+- Pricing recommendations remain business records, but now carry surfaced agent rationale and review metadata.
+- `agent_run_id` links operational records back to runtime traces rather than duplicating full runtime state in business tables.
 
 ## Full Core ERD
 
@@ -131,3 +145,30 @@ erDiagram
 | Catalog publish flow | `product_content_drafts`, `approval_requests`, `audit_events`, `notifications` |
 | P1 support | `support_conversations`, `support_messages`, `policy_documents`, `policy_document_chunks` |
 | P1 operations | `risk_reviews`, `inventory_alerts`, `reorder_suggestions`, `supplier_reorder_drafts` |
+| P2 pricing operations | `pricing_rules`, `price_reference_inputs`, `price_recommendations` |
+
+## Agent-Linked Business Fields
+
+The operational business tables now surface selected agent-derived fields directly for API and UI use:
+
+- `reorder_suggestions`
+  - `agent_run_id`
+  - `rationale_summary`
+  - `urgency`
+  - `confidence_score`
+  - `needs_human_review`
+  - `review_reason_code`
+- `risk_reviews`
+  - `agent_run_id`
+  - `explanation_json`
+  - `explanation_summary`
+  - `confidence_score`
+  - `needs_human_review`
+  - `review_reason_code`
+  - `recommended_decision`
+- `price_recommendations`
+  - `agent_run_id`
+  - `explanation_summary`
+  - `confidence_score`
+  - `needs_human_review`
+  - `review_reason_code`
