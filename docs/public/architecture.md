@@ -80,6 +80,7 @@ graph TD
 
 - P0 centers on sync, catalog drafts, approvals, and publish-back.
 - P1 adds support, policy retrieval, fraud review, inventory alerts, and analytics.
+- P1 and P2 also now use dedicated agent runners for fraud/risk, inventory reorder reasoning, and pricing recommendation flows.
 
 ## Runtime Deployment View
 
@@ -136,12 +137,14 @@ sequenceDiagram
     Worker->>DB: mark running
     Worker->>Shopify: fetch products, variants, customers, orders
     Worker->>DB: upsert imported records
-    Worker->>DB: run fraud and inventory post-processing
+    Worker->>DB: create fraud and inventory post-processing shells
+    Worker->>Redis: enqueue fraud and inventory agent work
     Worker->>DB: mark succeeded or failed
 ```
 
 - Sync is asynchronous.
 - Fraud and inventory logic run after import, not before it.
+- Those domains now hand off to dedicated agent tasks after sync shell records are persisted.
 
 ## Draft And Approval Flow
 
@@ -194,3 +197,20 @@ sequenceDiagram
 
 - Support drafts stay internal.
 - Policy chunks and order context ground the generated reply.
+
+## Operational Agent Flows
+
+```mermaid
+graph TD
+    SYNC[Sync completion] --> FRAUDSHELL[Fraud shell records]
+    SYNC --> INVSHELL[Inventory alert shells]
+    FRAUDSHELL --> FRAUDAGENT[Fraud/Risk Agent task]
+    INVSHELL --> INVAGENT[Inventory Agent task]
+    PRICEINPUT[Pricing reference input or simulation] --> PRICEAGENT[Pricing Agent task or sync simulation path]
+    FRAUDAGENT --> RISKREVIEWS[Risk reviews and order risk fields]
+    INVAGENT --> REORDER[Reorder suggestions and supplier drafts]
+    PRICEAGENT --> PRICERECS[Price recommendations and optional approvals]
+```
+
+- Inventory, fraud/risk, and pricing now follow the same persisted `workflow_run` + `agent_run` model as the earlier product-content and support agents.
+- Deterministic validation still runs after the agent output before final business records are updated.

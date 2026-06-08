@@ -55,8 +55,9 @@ sequenceDiagram
 | `approvals` | review and execute publish-governed actions | mixed |
 | `support` | conversations, messages, reply drafts | mixed |
 | `policies` | policy CRUD and retrieval source material | mixed |
-| `fraud` | order risk score and review queue | sync reads + sync-triggered writes |
-| `inventory` | alerts, reorder suggestions, supplier drafts | sync reads + sync-triggered writes |
+| `fraud` | order risk score and review queue | sync-triggered agent writes + sync reads |
+| `inventory` | alerts, reorder suggestions, supplier drafts | sync-triggered agent writes + sync reads |
+| `pricing` | pricing rules, simulations, and recommendations | mixed |
 | `analytics` | overview and automation metrics | sync |
 
 ## Auth API Flow
@@ -206,20 +207,22 @@ sequenceDiagram
 sequenceDiagram
     participant Sync as Sync Worker
     participant Fraud as Fraud Module
+    participant Agent as Fraud/Risk Agent
     participant DB as Postgres
     participant Client
     participant API
 
-    Sync->>Fraud: score imported orders
-    Fraud->>DB: update risk_score + risk_status
-    Fraud->>DB: create risk_review if threshold exceeded
+    Sync->>Fraud: create agent run for imported order
+    Fraud->>Agent: enqueue fraud task
+    Agent->>DB: update risk_score + risk_status
+    Agent->>DB: create or update risk_review if review is required
     Client->>API: GET order risk score / risk reviews
     API->>DB: read fraud state
     API-->>Client: risk data
 ```
 
-- Fraud scoring is triggered by sync, not by a standalone generation endpoint.
-- Review APIs expose the stored results.
+- Fraud assessment is triggered by sync, not by a standalone generation endpoint.
+- Review APIs expose stored score, explanation, review metadata, and `agent_run_id`.
 
 ## Inventory API Flow
 
@@ -227,19 +230,48 @@ sequenceDiagram
 sequenceDiagram
     participant Sync as Sync Worker
     participant Inv as Inventory Module
+    participant Agent as Inventory Agent
     participant DB as Postgres
     participant Client
     participant API
 
     Sync->>Inv: evaluate imported variants
     Inv->>DB: create or update inventory alerts
-    Inv->>DB: create reorder suggestions
+    Inv->>Agent: enqueue inventory task for below-threshold alerts
+    Agent->>DB: create or update reorder suggestions
+    Agent->>DB: create optional supplier draft
     Client->>API: list alerts / suggestions / drafts
     API->>DB: read inventory state
     API-->>Client: inventory intelligence
 ```
 
 - Inventory APIs mainly expose worker-produced operational state.
+- Suggestion responses include surfaced rationale, review metadata, and `agent_run_id`.
+
+## Pricing API Flow
+
+```mermaid
+sequenceDiagram
+    participant Client
+    participant API
+    participant DB
+    participant Redis
+    participant Worker
+    participant Agent as Pricing Agent
+    participant LLM
+
+    Client->>API: create reference input or CSV import
+    API->>DB: persist reference input + agent run shell
+    API->>Redis: enqueue pricing task
+    Redis->>Worker: execute pricing task
+    Worker->>Agent: run pricing recommendation flow
+    Agent->>LLM: generate structured recommendation
+    Agent->>DB: save price_recommendation and optional approval link
+    Client->>API: fetch recommendation or simulate pricing
+```
+
+- Pricing simulation and recommendation responses are agent-backed.
+- Business guardrails still block below-floor, above-ceiling, or unsafe recommendation outputs.
 
 ## Analytics API Flow
 
