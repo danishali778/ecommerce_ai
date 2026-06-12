@@ -1,6 +1,6 @@
 # Manual Testing Guide
 
-This document captures the major manual backend validation flows that were exercised locally on `2026-06-12` against the real application stack.
+This document captures the major manual backend validation flows that were exercised locally  against the real application stack.
 
 ## Test Environment
 
