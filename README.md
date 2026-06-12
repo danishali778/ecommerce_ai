@@ -322,6 +322,30 @@ $env:LIVE_ENABLE_AGENT_EVALS="1"
 venv\Scripts\python.exe -m pytest apps/api/tests/live/test_live_agent_evals.py -q -m live
 ```
 
+## Manual Validation Snapshot
+
+Recent manual QA covered the main local operator flows with a real Shopify-connected store, active worker stack, and authenticated Swagger testing.
+
+- full walkthrough: [Manual Testing Guide](docs/public/manual-testing.md)
+- major flows validated: store connection, sync, content drafting, approvals, support, fraud, inventory, analytics, pricing, and workflows
+- notable issues found during QA were fixed locally before re-testing, including inventory agent output handling and analytics automation metrics
+
+### Sync Run Queued
+
+![Queued sync run](assets/job-queued-to-pull-data-1.png)
+
+### Generated Product Draft
+
+![Generated product draft](assets/generated-draft-1.png)
+
+### Support Reply Draft
+
+![Generated support reply draft](assets/message-reply.png)
+
+### Pricing Recommendation
+
+![Pricing recommendation details](assets/pricing-recommendation-2.png)
+
 ## Typical Operator Flows
 
 ### Product Content Flow
@@ -366,6 +390,7 @@ venv\Scripts\python.exe -m pytest apps/api/tests/live/test_live_agent_evals.py -
 - [Public API Design Overview](docs/public/api-design.md)
 - [Public Schema Design Overview](docs/public/schema-design.md)
 - [Public Agents Layer Overview](docs/public/agents-layer.md)
+- [Manual Testing Guide](docs/public/manual-testing.md)
 - [Phase 3 Runtime Hardening Rollout](docs/internal/Phase3_Runtime_Hardening_Rollout.md)
 
 ## Roadmap Direction
