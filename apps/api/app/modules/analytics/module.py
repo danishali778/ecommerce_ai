@@ -219,9 +219,7 @@ class AnalyticsModule:
                         end_at,
                         extra_filters=(NotificationDelivery.status == "failed",),
                     ),
-                    "sync_retry_total": self.scalar_sum_int(
-                        SyncRun.retry_count,
-                        SyncRun,
+                    "sync_retry_total": self.sync_retry_total(
                         organization_id,
                         store_id,
                         start_at,
@@ -260,8 +258,7 @@ class AnalyticsModule:
                         start_at,
                         end_at,
                     ),
-                    "agent_runtime_seconds_avg": self.average_runtime_seconds(
-                        AgentRun,
+                    "agent_runtime_seconds_avg": self.average_agent_runtime_seconds(
                         organization_id,
                         store_id,
                         start_at,
@@ -501,6 +498,38 @@ class AnalyticsModule:
         if not durations:
             return 0
         return int(sum(durations) / len(durations))
+
+    def average_agent_runtime_seconds(self, organization_id: UUID, store_id: UUID, start_at: datetime, end_at: datetime) -> int:
+        rows = self.db.execute(
+            select(AgentRun.latency_ms)
+            .where(
+                AgentRun.organization_id == organization_id,
+                AgentRun.store_id == store_id,
+                AgentRun.created_at >= start_at,
+                AgentRun.created_at <= end_at,
+            )
+        ).all()
+        durations = [int(latency_ms) for (latency_ms,) in rows if latency_ms is not None]
+        if not durations:
+            return 0
+        return int((sum(durations) / len(durations)) / 1000)
+
+    def sync_retry_total(self, organization_id: UUID, store_id: UUID, start_at: datetime, end_at: datetime) -> int:
+        rows = self.db.execute(
+            select(SyncRun.retry_of_sync_run_id, SyncRun.attempt_count)
+            .where(
+                SyncRun.organization_id == organization_id,
+                SyncRun.store_id == store_id,
+                SyncRun.created_at >= start_at,
+                SyncRun.created_at <= end_at,
+            )
+        ).all()
+        total = 0
+        for retry_of_sync_run_id, attempt_count in rows:
+            if retry_of_sync_run_id is not None:
+                total += 1
+            total += max(int(attempt_count or 0) - 1, 0)
+        return total
 
     def average_notification_delivery_latency_seconds(self, organization_id: UUID, store_id: UUID, start_at: datetime, end_at: datetime) -> int:
         rows = self.db.execute(

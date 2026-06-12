@@ -27,6 +27,8 @@ def build_inventory_reorder_prompt(
         "Rules:\n"
         "- Never say an email or purchase order was sent.\n"
         "- Use only the provided product, variant, and inventory context.\n"
+        "- supplier_draft.body must be plain text only, never an object, array, or nested JSON.\n"
+        "- If you want to include structured factors, put them in rationale_json instead of supplier_draft.body.\n"
         "- If the context is weak, lower confidence and request review.\n\n"
         f"Product context:\n{json.dumps(product_context, ensure_ascii=True)}\n\n"
         f"Variant context:\n{json.dumps(variant_context, ensure_ascii=True)}\n\n"

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 from decimal import Decimal
+import json
 from uuid import UUID
 
 from langgraph.graph import END, START, StateGraph
@@ -237,7 +238,7 @@ class InventoryAgentRunner:
                 existing_supplier_draft=state["existing_supplier_draft"],
             )
             raw = self.llm_provider.generate_structured_json(prompt)
-            output = InventoryAgentOutput.model_validate(raw)
+            output = InventoryAgentOutput.model_validate(self._normalize_output(raw))
             return {"result": output}
 
         graph = StateGraph(dict)
@@ -282,6 +283,40 @@ class InventoryAgentRunner:
             }
         )
         return result["result"]
+
+    @staticmethod
+    def _normalize_output(raw: dict | None) -> dict:
+        normalized = dict(raw or {})
+
+        for field in ("rationale_summary", "review_reason_code"):
+            value = normalized.get(field)
+            if value is None:
+                continue
+            if isinstance(value, (dict, list)):
+                normalized[field] = json.dumps(value, ensure_ascii=True)
+            else:
+                normalized[field] = str(value)
+
+        supplier_draft = normalized.get("supplier_draft")
+        if supplier_draft is None:
+            return normalized
+
+        if not isinstance(supplier_draft, dict):
+            supplier_draft = {"body": supplier_draft}
+        else:
+            supplier_draft = dict(supplier_draft)
+
+        for field in ("vendor_name", "recipient_email", "subject", "body"):
+            value = supplier_draft.get(field)
+            if value is None:
+                continue
+            if isinstance(value, (dict, list)):
+                supplier_draft[field] = json.dumps(value, ensure_ascii=True)
+            else:
+                supplier_draft[field] = str(value)
+
+        normalized["supplier_draft"] = supplier_draft
+        return normalized
 
     @staticmethod
     def _validated_quantity(quantity: int) -> int:
